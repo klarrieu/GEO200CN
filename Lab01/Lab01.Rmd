@@ -25,10 +25,7 @@ a) Reads them into R
 
 ```{r}
 loblolly = read.delim('loblolly.dat', sep=' ')
-loblolly
-
 chickweights = read.csv('ChickWeightSub.csv')
-chickweights
 ```
 
 b) for both data sets, lists all the variable names
@@ -41,7 +38,8 @@ colnames(chickweights)
 c) for each variable in one of the data sets, use a function to compute the min and a function to compute the mean value 
 
 ```{r}
-
+apply(loblolly, 2, min)
+apply(loblolly, 2, mean)
 ```
 
 d) now pick one variable from one data set and use functions summary, table, quantile, and boxplot
@@ -91,13 +89,15 @@ c) Write a function 'sumOfSquares' that behaves like this:
 [1] 21.875
 ```
 
+To compute the "sum of squares", subtract the mean value of all numbers from each number. Square these numbers and sum them.
+
 ```{r}
 sumOfSquares = function(v){
-  
+  return(sum((v - mean(v))^2))
 }
+d = c(1,5,2,4,6,2,4,5)
+sumOfSquares(d)
 ```
-
-To compute the "sum of squares", subtract the mean value of all numbers from each number. Square these numbers and sum them
 
 
 __3) Data preparation__. Use the data in "students.csv" and "scores.dat" to assess if there is a relation between the "group" or "age" of a student and their average score and for the three subjects (math, english, geography)
@@ -105,7 +105,11 @@ __3) Data preparation__. Use the data in "students.csv" and "scores.dat" to asse
 a) use reshape and merge to combine the two data sets
 
 ```{r}
-
+students = read.csv('students.csv')
+scores = read.delim('scores.dat', sep=' ')
+scores = reshape(scores, idvar='student', timevar='subject', direction='wide')
+merged_data = merge(students, scores, by.x='students', by.y='student')
+merged_data
 ```
 
 b) compute correlation coefficients
