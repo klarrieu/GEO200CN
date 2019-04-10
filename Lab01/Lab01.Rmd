@@ -38,6 +38,7 @@ colnames(chickweights)
 c) for each variable in one of the data sets, use a function to compute the min and a function to compute the mean value 
 
 ```{r}
+# apply the corresponding functions column-wise (axis 2)
 apply(loblolly, 2, min)
 apply(loblolly, 2, mean)
 ```
@@ -46,7 +47,6 @@ d) now pick one variable from one data set and use functions summary, table, qua
 
 ```{r}
 h = loblolly$height
-
 summary(h)
 table(h)
 quantile(h)
@@ -78,6 +78,7 @@ b) Write a function 'f' that behaves like this:
 f = function(string){
   return(sprintf('hello %s, how are you', string))
 }
+# use test example
 f('Jim')
 ```
 
@@ -93,8 +94,10 @@ To compute the "sum of squares", subtract the mean value of all numbers from eac
 
 ```{r}
 sumOfSquares = function(v){
+  # subtract mean from all values, then square all values, then aggregate by summing
   return(sum((v - mean(v))^2))
 }
+# use test example
 d = c(1,5,2,4,6,2,4,5)
 sumOfSquares(d)
 ```
@@ -106,20 +109,36 @@ a) use reshape and merge to combine the two data sets
 
 ```{r}
 students = read.csv('students.csv')
-scores = read.delim('scores.dat', sep=' ')
+scores = read.delim('scores.dat', sep=' ', na.strings='-999') # set -999 in original data set to NA type
+# reshape so we have a column for each unique 'subject' value, using 'student' to identify corresponding row
 scores = reshape(scores, idvar='student', timevar='subject', direction='wide')
+# then merge data frames using the fact that 'students' in first data frame corresponds to 'student' in second data frame 
 merged_data = merge(students, scores, by.x='students', by.y='student')
+# for each column, average the score columns
+merged_data['avg_score'] = rowMeans(merged_data[,-1:-3])
 merged_data
 ```
 
 b) compute correlation coefficients
 
 ```{r}
-
+# correlation coefficient matrix for all variable pairs in merged_data, omitting student column
+# calculate correlations only using pairs of values for which neither is NA
+corr_df = cor(merged_data[-1], use="pairwise.complete.obs")
+# remove irrelevant/repeated values
+corr_df = corr_df[1:2, -1:-2]
+corr_df
 ```
 
 c) produce a relevant plot
 
 ```{r}
-
+# plot group and age vs scores in math, english, geography, and average scores
+par(mfrow=c(2,4))
+dev.size = c(40,40)
+for (x in colnames(merged_data[2:3])){
+  for (y in colnames(merged_data[4:7])){
+    plot(merged_data[[x]], merged_data[[y]], xlab=x, ylab=y, pch=19)
+  }
+}
 ```
