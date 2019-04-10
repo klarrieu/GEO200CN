@@ -9,11 +9,11 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-## Question 1.1
+#### Question 1.1
 
 The primary difference between the two maps used in OSU vs. rspatial is that the rspatial map used is much higher resolution. As a result, even when the same yardstick is used, the rspatial map results in a longer coastline length.
 
-## Question 2.1
+#### Question 2.1: Create these matrices from `ind` and `dep` without using `byrow=TRUE`.
 
 ```{r}
 # independent variable
@@ -32,4 +32,164 @@ dep <- c(72, 75, 85, 29, 58, 30,
          58, 40, 46, 38, 35, 55)
 
 
+mi <- t(matrix(ind, ncol=6, nrow=6))
+md <- t(matrix(dep, ncol=6, nrow=6))
 ```
+
+#### Question 2.2: Instead of the `mean` function What other functions could, in principle, reasonably be used in an aggregation of raster cells?
+
+Other functions that could be reasonably used to aggregate raster data include `sum`, `range`, `min`, `max`, `sd`, etc.
+
+#### Question 2.3: There are other ways to do the above (converting two RasterLayer objects to a `data.frame`). Show how to obtain the same result (`d1`) using `as.vector` and `cbind`.
+
+```{r}
+# load package
+library(raster)
+# turn matrices into RasterLayer objects
+ri = raster(mi)
+rd = raster(md)
+
+ai1 = aggregate(ri, c(2, 1), fun=mean)
+ad1 = aggregate(rd, c(2, 1), fun=mean)
+
+d1 = data.frame(ind=as.vector(ai1), dep=as.vector(ad1))
+d1
+```
+
+#### Question 2.4: Show R code to make a cluster dendogram summarizing the distances between these six sites, and plot it.
+
+```{r}
+A = c(40, 43)
+B = c(1, 101)
+C = c(54, 111)
+D = c(104, 65)
+E = c(60, 22)
+F = c(20, 2)
+pts = rbind(A,B,C,D,E,F)
+dis = dist(pts)
+D = as.matrix(dis)
+D = round(D)
+hc = hclust(dis)
+plot(hc, xlab='site', ylab='distance', sub='')
+```
+
+#### Question 2.5: Show how you can do 'column-normalization' (Just an exercise, in spatial data analysis this is not a typical thing to do).
+
+```{r}
+W = 1 / D
+W[!is.finite(W)] = NA
+W = round(W, 4)
+ctot = colSums(W, na.rm=TRUE)
+W = W / rep(ctot, each=nrow(W))
+colSums(W, na.rm=TRUE)
+```
+
+#### Question 2.6: The `SpatialPolygonDataFrame` class is defined in package sp. But we never used library('sp') . So how is it possible that we have one of such objects?
+
+R automatically installs dependencies that are missing when a package is imported from the library. While `sp` was not imported explicitly, it was imported as a dependency of `dismo`.
+
+#### ISLR 2.4.9:
+
+```{r, echo=FALSE}
+library(ISLR)
+```
+
+*a.* Which of the predictors are quantitative, and which are qualitative?
+
+```{r}
+Auto
+```
+From looking at the data, we see all values are qualitative except for "origin" and "name".
+
+*b.* What is the range of each quantitative predictor?
+
+```{r}
+autoq = Auto[1:7]
+apply(autoq, 2, range)
+```
+
+*c.* What is the mean and standard deviation of each quantitative
+predictor?
+
+mean:
+```{r}
+apply(autoq, 2, mean)
+```
+
+standard deviation:
+```{r}
+apply(autoq, 2, sd)
+```
+
+*d.* Now remove the 10th through 85th observations. What is the
+range, mean, and standard deviation of each predictor in the
+subset of the data that remains?
+
+```{r}
+autorm = autoq[, -10:-85]
+```
+
+range:
+
+```{r}
+apply(autorm, 2, range)
+```
+
+mean:
+
+```{r}
+apply(autorm, 2, mean)
+```
+
+standard deviation:
+
+```{r}
+apply(autorm, 2, sd)
+```
+
+*e.* Using the full data set, investigate the predictors graphically,
+using scatterplots or other tools of your choice. Create some plots
+highlighting the relationships among the predictors. Comment
+on your findings.
+
+```{r}
+pairs(autorm)
+```
+
+From the above plot, we see that some pairs of variables appear to have a strong linear relationship (e.g. horsepower and weight) while other pairs appear to be weakly related or unrelated (e.g. weight and year).
+
+*f.* Suppose that we wish to predict gas mileage (mpg) on the basis
+of the other variables. Do your plots suggest that any of the
+other variables might be useful in predicting mpg? Justify your
+answer.
+
+Going off a visual interpretation of the plots, the strongest predictors of mpg appear to be displacement, horsepower, and weight. All three of these variables appear to negatively effect mpg, which intuitively makes sense as well.
+
+#### ISLR 3.7.8:
+
+*a.* Use the `lm()` function to perform a simple linear regression with
+`mpg` as the response and `horsepower` as the predictor. Use the
+`summary()` function to print the results. Comment on the output.
+
+```{r}
+mpg = Auto$mpg
+horsepower = Auto$horsepower
+m = lm(mpg ~ horsepower)
+summary(m)
+```
+
+Due to the $p \ll 0.05$, we can reject the null hypothesis and conclude there is a negative relationship between mpg and horsepower. Increasing the horsepower by $1$ approximately decreases the mpg by $0.15$. Thus, due to the range of variability of horsepower, it has a strong influence on mpg, e.g. for a difference of only $10$ horsepower implies a notable difference of $1.5$ miles per gallon. For a horsepower of $98$, the predicted mpg is (along with corresponding confidence and prediction intervals at the $95%$ level):
+
+```{r}
+predict(m, data.frame(horsepower=c(98)), interval='confidence')
+predict(m, data.frame(horsepower=c(98)), interval='prediction')
+```
+
+*b.* Plot the response and the predictor. Use the `abline()` function
+to display the least squares regression line.
+
+```{r}
+
+```
+
+#### ISLR 3.7.9: 
