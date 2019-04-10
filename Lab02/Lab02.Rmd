@@ -1,0 +1,35 @@
+---
+title: "Lab 2"
+author: "Kenneth Larrieu"
+date: "April 10, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Question 1.1
+
+The primary difference between the two maps used in OSU vs. rspatial is that the rspatial map used is much higher resolution. As a result, even when the same yardstick is used, the rspatial map results in a longer coastline length.
+
+## Question 2.1
+
+```{r}
+# independent variable
+ind <- c(87, 95, 72, 37, 44, 24,
+         40, 55, 55, 38, 88, 34,
+         41, 30, 26, 35, 38, 24,
+         14, 56, 37, 34,  8, 18,
+         49, 44, 51, 67, 17, 37,
+         55, 25, 33, 32, 59, 54)
+# dependent variable
+dep <- c(72, 75, 85, 29, 58, 30,
+         50, 60, 49, 46, 84, 23,
+         21, 46, 22, 42, 45, 14,
+         19, 36, 48, 23,  8, 29,
+         38, 47, 52, 52, 22, 48,
+         58, 40, 46, 38, 35, 55)
+
+
+```
