@@ -1,5 +1,5 @@
 ---
-title: "Lab 2"
+title: "GEO 200CN Lab 2"
 author: "Kenneth Larrieu"
 date: "April 10, 2019"
 output: html_document
@@ -31,7 +31,7 @@ dep <- c(72, 75, 85, 29, 58, 30,
          38, 47, 52, 52, 22, 48,
          58, 40, 46, 38, 35, 55)
 
-
+# create matrices filling by column (default), then transpose
 mi <- t(matrix(ind, ncol=6, nrow=6))
 md <- t(matrix(dep, ncol=6, nrow=6))
 ```
@@ -49,9 +49,11 @@ library(raster)
 ri = raster(mi)
 rd = raster(md)
 
+# aggregate individually
 ai1 = aggregate(ri, c(2, 1), fun=mean)
 ad1 = aggregate(rd, c(2, 1), fun=mean)
 
+# then combine into data.frame
 d1 = data.frame(ind=as.vector(ai1), dep=as.vector(ad1))
 d1
 ```
@@ -65,10 +67,13 @@ C = c(54, 111)
 D = c(104, 65)
 E = c(60, 22)
 F = c(20, 2)
+# create data.frame of point coordinates
 pts = rbind(A,B,C,D,E,F)
+# create distance matrix
 dis = dist(pts)
 D = as.matrix(dis)
 D = round(D)
+# create dendrogram object
 hc = hclust(dis)
 plot(hc, xlab='site', ylab='distance', sub='')
 ```
@@ -76,11 +81,15 @@ plot(hc, xlab='site', ylab='distance', sub='')
 #### Question 2.5: Show how you can do 'column-normalization' (Just an exercise, in spatial data analysis this is not a typical thing to do).
 
 ```{r}
+# create weights matrix
 W = 1 / D
 W[!is.finite(W)] = NA
 W = round(W, 4)
+# get column totals
 ctot = colSums(W, na.rm=TRUE)
+# divide entries in each column by corresponding column total
 W = W / rep(ctot, each=nrow(W))
+# check that columns are now normalized
 colSums(W, na.rm=TRUE)
 ```
 
@@ -97,14 +106,16 @@ library(ISLR)
 *a.* Which of the predictors are quantitative, and which are qualitative?
 
 ```{r}
-Auto
+head(Auto)
 ```
-From looking at the data, we see all values are qualitative except for "origin" and "name".
+From looking at the data, we see all values are quantitative except for "origin" and "name". While "origin" is numeric, it represents a physical location and not an actual quantitative measure.
 
 *b.* What is the range of each quantitative predictor?
 
 ```{r}
+# only first 7 columns (quantitative)
 autoq = Auto[1:7]
+# apply rannge function column-wise
 apply(autoq, 2, range)
 ```
 
@@ -153,6 +164,7 @@ highlighting the relationships among the predictors. Comment
 on your findings.
 
 ```{r}
+# plot all pairs of variables in autorm
 pairs(autorm)
 ```
 
@@ -181,7 +193,9 @@ summary(m)
 Due to the $p \ll 0.05$, we can reject the null hypothesis and conclude there is a negative relationship between mpg and horsepower. Increasing the horsepower by $1$ approximately decreases the mpg by $0.15$. Thus, due to the range of variability of horsepower, it has a strong influence on mpg, e.g. for a difference of only $10$ horsepower implies a notable difference of $1.5$ miles per gallon. For a horsepower of $98$, the predicted mpg is (along with corresponding confidence and prediction intervals at the $95%$ level):
 
 ```{r}
+# print predicted value with confidence intervals
 predict(m, data.frame(horsepower=c(98)), interval='confidence')
+# print predicted value with prediction intervals
 predict(m, data.frame(horsepower=c(98)), interval='prediction')
 ```
 
@@ -189,7 +203,108 @@ predict(m, data.frame(horsepower=c(98)), interval='prediction')
 to display the least squares regression line.
 
 ```{r}
-
+# data scatter plot
+plot(horsepower, mpg)
+# plot line of best fit using model coefficients
+abline(coef(m))
 ```
 
+*c.* Use the `plot()` function to produce diagnostic plots of the least
+squares regression fit. Comment on any problems you see with
+the fit.
+
+```{r}
+par(mfrow=c(2,2))
+plot(m)
+```
+
+Looking at the residual plot, a trend seems to still be present, indicating that the underlying relationship may be nonlinear. Thus, a linear model may not be appropriate. Near the ends of the Q-Q plot we see deviation from the line $y=x$, also indicating the same trend departing from linearity (the trend has a concave behavior). From the residuals and leverage plots, it is evident that most points have a very small amount of leverage, which means the model would be relatively stable if a point were removed. Point 116 has fairly high leverage and residual values compared to the others, while point 331 may be considered an outlier.
+
 #### ISLR 3.7.9: 
+
+*a.* Produce a scatterplot matrix which includes all of the variables
+in the data set.
+
+```{r}
+pairs(Auto)
+```
+
+*b.* Compute the matrix of correlations between the variables using
+the function `cor()`. You will need to exclude the `name` variable, which is qualitative.
+
+```{r}
+cor(Auto[-9])
+```
+
+*c.* Use the `lm()` function to perform a multiple linear regression
+with `mpg` as the response and all other variables except `name` as
+the predictors. Use the `summary()` function to print the results.
+Comment on the output.
+
+```{r}
+m = lm(Auto$mpg ~ Auto$cylinders + Auto$displacement + Auto$horsepower + Auto$weight + Auto$acceleration + Auto$year + Auto$origin)
+summary(m)
+```
+
+From the model output, we see that there is a statistically significant relationship with mpg for the predictors displacement, weight, year, and origin. The coefficient of $~0.75$ for the year predictor indicates that for an increase in the manufacture year by 1 increases the mpg by $~0.75$ on average. This makes sense as newer cars tend to have higher fuel efficiency.
+
+*d.* Use the `plot()` function to produce diagnostic plots of the linear
+regression fit. Comment on any problems you see with the fit.
+Do the residual plots suggest any unusually large outliers? Does
+the leverage plot identify any observations with unusually high
+leverage?
+
+```{r}
+par(mfrow=c(2,2))
+plot(m)
+```
+
+There is a weak trend which is present in the residuals. The Q-Q plot indicates good agreement between standardized residuals and theoretical quantiles, except on the rght end where the highest standardized residuals are larger than expected by the model. While point 321 is the greatest outlier, there are no unusually large outliers. Point 14 has much more leverage than any of the other points, which corresponds to the buick estate wagon (sw), a car with notably high horsepower given it's low weight and year of manufacture.
+
+*e.* Use the `*` and `:` symbols to fit linear regression models with
+interaction effects. Do any interactions appear to be statistically
+significant?
+
+In the following model, we consider interactions between displacement, horsepower, weight, and acceleration.
+
+```{r}
+m = lm(Auto$mpg ~ Auto$cylinders + Auto$displacement * Auto$horsepower * Auto$weight * Auto$acceleration + Auto$year + Auto$origin)
+summary(m)
+```
+From the above results, we see that the only significant interaction term is that between displacement and acceleration, suggesting that changes in the displacement may affect the degree to which acceleration contributes to mpg and vice versa.
+
+The following model only considers interactions between displacement, horsepower, weight and acceleration, but not the individual terms.
+
+```{r}
+m = lm(Auto$mpg ~ Auto$cylinders + Auto$displacement : Auto$horsepower : Auto$weight : Auto$acceleration + Auto$year + Auto$origin)
+summary(m)
+```
+Not surprisingly, the lone interaction term is more significant in this model, though the residuals have a wider range, indicating a poorer fit.
+
+*f.* Try a few different transformations of the variables, such as
+$\log(X)$, $\sqrt{X}$, $X^2$. Comment on your findings.
+
+Fitting a linear model using $\log(\text{horsepower})$:
+
+```{r}
+m = lm(Auto$mpg ~ Auto$cylinders + Auto$displacement + log(Auto$horsepower) + Auto$weight + Auto$acceleration + Auto$year + Auto$origin)
+summary(m)
+```
+This transformation was useful in that there is significant dependence on $\log(\text{horsepower})$ while in the initial model there was no dependence on horsepower. There is an increase in $R^2$ from the initial model as well, which is expected since the log function is essentially bringing the points closer together.
+
+Fitting another model making the additional transformation $\sqrt{\text{cylinders}}$:
+
+```{r}
+m = lm(Auto$mpg ~ sqrt(Auto$cylinders) + Auto$displacement + log(Auto$horsepower) + Auto$weight + Auto$acceleration + Auto$year + Auto$origin)
+summary(m)
+```
+Now $\sqrt{\text{cylinders}}$ has significant dependence as well, and there is a slight increase in $R^2$.
+
+If we instead use $\text{cylinders}^2$:
+
+```{r}
+cy2 = Auto$cylinders^2
+m = lm(Auto$mpg ~ cy2 + Auto$displacement + log(Auto$horsepower) + Auto$weight + Auto$acceleration + Auto$year + Auto$origin)
+summary(m)
+```
+In this case the transformation decreased $R^2$, and the dependence on $\text{cylinders}^2$ is not significant.
