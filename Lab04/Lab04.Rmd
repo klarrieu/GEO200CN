@@ -1,0 +1,138 @@
+---
+title: " GEO 200CN Lab #4"
+author: "Kenneth Larrieu"
+date: "April 22, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Part 1: Logistic Regression
+
+
+
+```{r}
+# y: travels by train or not
+y <-c(0,1,0,1,0,1,0,1,1,1,0,0,0,0,1,1)
+# x: travel time by car
+x <-c(32,89,50,49,80,56,40,70,72,76,32,58, 12, 15, 110, 120)
+
+gm <-glm(y~x, family=binomial)
+summary(gm)
+```
+```{r}
+anova(gm, test="Chisq")
+```
+
+```{r}
+y <- c('No','Yes','No','Yes','No','Yes','No','Yes','Yes','Yes','No','No','No','No','Yes','Yes')
+x <- c(32,89,50,49,80,56,40,70,72,76,32,58, 12, 15, 110, 120)
+y <- as.factor(y)
+gm <- glm(y~x, family=binomial)
+```
+
+## Part 2: LDA with Spatial Data
+
+```{r}
+# read the file with observations
+s <- read.csv('samples.csv', stringsAsFactors=FALSE)
+head(s)
+```
+
+```{r}
+nrow(s)
+```
+
+```{r}
+s = subset(s, !(whr %in% c('Urban', 'Agriculture')))
+```
+
+```{r}
+nrow(s)
+```
+
+```{r}
+library(raster)
+
+usa = getData('GADM', country='USA', level=1)
+ca = usa[usa$NAME_1 == 'California', ]
+teale_albers = CRS('+proj=aea +lat_1=34 +lat_2=40.5 +lat_0=0 +lon_0=-120+x_0=0 +y_0=-4000000 +datum=NAD83 +units=m')
+
+library(rgdal)
+ca = spTransform(ca, teale_albers)
+
+plot(ca)
+points(s$x, s$y)
+```
+
+```{r}
+b = brick('climate.grd')
+b
+```
+
+```{r}
+plot(b)
+```
+
+```{r}
+e = extract(b, s[1:2])
+s = cbind(s, e)
+```
+
+```{r}
+head(s)
+```
+
+```{r}
+set.seed(0)
+i <-sample(nrow(s), 0.2* nrow(s))
+test <- s[i,]
+train <- s[-i,]
+```
+
+```{r}
+nrow(test)/nrow(s)
+```
+
+```{r}
+library(MASS)
+lda <-lda(whr~temperature+precipitation, data=train)
+lda
+```
+
+
+```{r}
+p <- predict(lda)
+tab <- table(train$whr, p$class)
+```
+
+```{r}
+tab
+```
+
+```{r}
+sum(diag(tab))/sum(tab)
+```
+
+```{r}
+# make predictions on test data
+p2 = predict(lda, test)
+# make confusion matrix
+tab2 = table(test$whr, p2$class)
+# get fraction correctly classified
+sum(diag(tab2))/sum(tab2)
+```
+
+
+```{r}
+tab2
+```
+
+srrthjsnbsorgnaokrnrgojnj seems easiest to predict, and adfbkdjfb seems hardest to predict. Because sdgoijsdnfbjn
+
+```{r}
+
+```
+
