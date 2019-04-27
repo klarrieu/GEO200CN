@@ -1,0 +1,239 @@
+---
+title: "GEO 200CN Lab #4 Part 2"
+author: "Kenneth Larrieu"
+date: "April 26, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+```{r}
+library(rspatial)
+# load data
+city <- sp_data("city")
+crime <- sp_data("crime.rds")
+# plot it
+par(mai=c(0,0,0,0))
+plot(city, col='light blue')
+points(crime, col='red', cex=.5, pch='+')
+```
+
+```{r}
+tb <- sort(table(crime$CATEGORY))[-1]
+tb
+```
+
+```{r}
+# get coordinates of crime incidents
+xy <- coordinates(crime)
+# only look at unique values
+xy <- unique(xy)
+```
+
+
+```{r}
+CityArea <- raster::area(city)
+dens <- nrow(xy) / CityArea
+dens
+crs(city)
+```
+
+**Question 1a**: What is the unit of 'dens'?
+
+Looking at the coordinate reference system, we see the units of city are in ft. Therefore, the units of 'dens' are unique crime incident locations per square foot.
+
+**Question 1b**: Question 1b:What is the number of crimes per km^2?
+
+```{r}
+# change coordinate reference system units to km
+km_crs = CRS("+proj=lcc +lat_1=38.33333333333334 +lat_2=39.83333333333334
++lat_0=37.66666666666666 +lon_0=-122 +x_0=2000000 +y_0=500000.0000000001
++datum=NAD83 +units=km +no_defs +ellps=GRS80 +towgs84=0,0,0")
+city_km = spTransform(city, km_crs)
+
+# recalculate area and density using km^2
+CityArea_km <- raster::area(city_km)
+# use total number of crimes, not just unique crime locationss
+dens <- nrow(crime) / CityArea_km
+# number of crimes per km^2
+dens
+```
+
+```{r}
+r <- raster(city)
+res(r) <- 1000
+r
+```
+
+```{r}
+r <- rasterize(city, r)
+plot(r)
+quads <- as(r, 'SpatialPolygons')
+plot(quads, add=TRUE)
+points(crime, col='red', cex=.5)
+```
+
+```{r}
+nc <- rasterize(coordinates(crime), r, fun='count', background=0)
+plot(nc)
+plot(city, add=TRUE)
+```
+
+```{r}
+ncrimes <- mask(nc, r)
+plot(ncrimes)
+plot(city, add=TRUE)
+```
+
+```{r}
+f <- freq(ncrimes, useNA='no')
+plot(f, pch=20)
+```
+
+```{r}
+# number of quadrats
+quadrats <- sum(f[,2])
+# number of cases
+cases <- sum(f[,1] * f[,2])
+mu <- cases / quadrats
+mu
+
+ff <- data.frame(f)
+colnames(ff) <- c('K', 'X')
+ff$Kmu <- ff$K - mu
+ff$Kmu2 <- ff$Kmu^2
+ff$XKmu2 <- ff$Kmu2 * ff$X
+
+s2 <- sum(ff$XKmu2) / (sum(ff$X)-1)
+s2
+
+VMR <- s2 / mu
+VMR
+```
+
+**Question 2**:What does this VMR score tell us about the point pattern?
+
+The VMR suggests clustering and that the crime distribution is not an IRP.
+
+```{r}
+d <- dist(xy)
+class(d)
+
+dm <- as.matrix(d)
+dm[1:5, 1:5]
+
+diag(dm) <- NA
+dm[1:5, 1:5]
+
+dmin <- apply(dm, 1, min, na.rm=TRUE)
+mdmin <- mean(dmin)
+
+wdmin <- apply(dm, 1, which.min)
+
+plot(city)
+points(crime, cex=.1)
+ord <- rev(order(dmin))
+far25 <- ord[1:25]
+neighbors <- wdmin[far25]
+points(xy[far25, ], col='blue', pch=20)
+points(xy[neighbors, ], col='red')
+# drawing the lines, easiest via a loop
+for (i in far25) {
+    lines(rbind(xy[i, ], xy[wdmin[i], ]), col='red')
+}
+```
+
+```{r}
+max(dmin)
+# get the unique distances (for the x-axis)
+distance <- sort(unique(round(dmin)))
+# compute how many cases there with distances smaller that each x
+Gd <- sapply(distance, function(x) sum(dmin < x))
+# normalize to get values between 0 and 1
+Gd <- Gd / length(dmin)
+plot(distance, Gd)
+```
+
+```{r}
+# using xlim to exclude the extremes
+plot(distance, Gd, xlim=c(0,500))
+```
+
+```{r}
+stepplot <- function(x, y, type='l', add=FALSE, ...) {
+    x <- as.vector(t(cbind(x, c(x[-1], x[length(x)]))))
+    y <- as.vector(t(cbind(y, y)))
+  if (add) {
+     lines(x,y, ...)
+  } else {
+       plot(x,y, type=type, ...)
+  }
+}
+
+stepplot(distance, Gd, type='l', lwd=2, xlim=c(0,500))
+```
+
+```{r}
+# get the centers of the 'quadrats' (raster cells)
+p <- rasterToPoints(r)
+# compute distance from all crime sites to these cell centers
+d2 <- pointDistance(p[,1:2], xy, longlat=FALSE)
+# the remainder is similar to the G function
+Fdistance <- sort(unique(round(d2)))
+mind <- apply(d2, 1, min)
+Fd <- sapply(Fdistance, function(x) sum(mind < x))
+Fd <- Fd / length(mind)
+plot(Fdistance, Fd, type='l', lwd=2, xlim=c(0,3000))
+```
+
+```{r}
+ef <- function(d, lambda) {
+  E <- 1 - exp(-1 * lambda * pi * d^2)
+}
+expected <- ef(0:2000, dens)
+```
+
+```{r}
+plot(distance, Gd, type='l', lwd=2, col='red', las=1,
+    ylab='F(d) or G(d)', xlab='Distance', yaxs="i", xaxs="i")
+lines(Fdistance, Fd, lwd=2, col='blue')
+lines(0:2000, expected, lwd=2)
+legend(1200, .3,
+   c(expression(italic("G")["d"]), expression(italic("F")["d"]), 'expected'),
+   lty=1, col=c('red', 'blue', 'black'), lwd=2, bty="n")
+```
+
+**Question 3**: What does this plot suggest about the point pattern?
+
+Because G is above the expected IRP distribution and F is below, this suggests that there is clutering in the data.
+
+```{r}
+distance <- seq(1, 30000, 100)
+Kd <- sapply(distance, function(x) sum(d < x)) # takes a while
+Kd <- Kd / (length(Kd) * dens)
+plot(distance, Kd, type='l', lwd=2)
+```
+
+**Question 4**: Create a single random pattern of events for the city, with the same number of events as the crime data (object xy). Use function 'spsample'.
+
+```{r}
+
+```
+
+**Question 5**: Compute the G function for the observed data, and plot it on a single plot, together with the G function for the theoretical expectation (formula 5.12).
+
+```{r}
+
+```
+
+
+**Question 6**: (Difficult!) Do a Monte Carlo simulation (page 149) to see if the 'mean nearest distance' of the observed crime data is significantly different from a random pattern. Use a 'for loop'. First write 'pseudo-code'. That is, say in natural language what should happen. Then try to write R code that implements this.
+
+```{r}
+
+```
+

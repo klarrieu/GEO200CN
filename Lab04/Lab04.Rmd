@@ -11,7 +11,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ## Part 1: Logistic Regression
 
-
+Creating the data we will work with and classifying with logistic regression:
 
 ```{r}
 # y: travels by train or not
@@ -25,6 +25,20 @@ summary(gm)
 ```{r}
 anova(gm, test="Chisq")
 ```
+
+Instead of using numeric codes, we can use factors:
+
+```{r}
+# y: travels by train ='Yes', not by train ='No'
+y <-c('No','Yes','No','Yes','No','Yes','No','Yes','Yes','Yes','No','No','No','No','Yes','Yes')
+# x: travel time by car
+x <-c(32,89,50,49,80,56,40,70,72,76,32,58, 12, 15, 110, 120)
+```
+
+But the below gives an error:
+`gm <- glm(y~x, family=binomial)`
+
+*Question 1: How can you fix that? Please complete the code below
 
 ```{r}
 y <- c('No','Yes','No','Yes','No','Yes','No','Yes','Yes','Yes','No','No','No','No','Yes','Yes')
@@ -46,7 +60,7 @@ nrow(s)
 ```
 
 ```{r}
-s = subset(s, !(whr %in% c('Urban', 'Agriculture')))
+s = subset(s, !(whr %in% c('Urban', 'Agriculture', 'Water', 'Wetland')))
 ```
 
 ```{r}
@@ -133,6 +147,76 @@ tab2
 srrthjsnbsorgnaokrnrgojnj seems easiest to predict, and adfbkdjfb seems hardest to predict. Because sdgoijsdnfbjn
 
 ```{r}
-
+pr <-predict(b, lda)# takes a little while
+plot(pr)
 ```
+
+```{r}
+lda$lev
+```
+
+```{r}
+levs <-data.frame(ID=1:length(lda$lev), class=lda$lev)
+levs
+```
+
+```{r}
+levels(pr) <- levs
+pr
+```
+
+```{r}
+library(rasterVis)
+levelplot(pr)
+```
+
+```{r}
+cols <-rev(c('orange','yellow','green','beige','dark green','black'))
+levelplot(pr, col.regions=cols)
+```
+
+```{r}
+v <-raster('calveg.grd')
+levels(v)
+```
+
+```{r}
+spplot(v)
+```
+
+```{r}
+m <-merge(levels(v)[[1]],levels(pr)[[1]], by.x='WHR10NAME', by.y='class', all.x=TRUE)
+m
+```
+
+```{r}
+v2 <-reclassify(v, m[,2:3])
+levels(v2) <-levels(pr)
+```
+
+
+```{r}
+s <-stack(v2, pr)
+names(s) <-c('observed','predicted')
+cols <-rev(c('beige','orange','green','yellow','dark green','black'))
+levelplot(s, col.regions=cols)
+```
+
+```{r}
+x <-mask(pr, v2, inverse=TRUE)
+levels(x) <-levels(pr)
+state <-list("sp.polygons", ca)
+spplot(x, col.regions=cols,  sp.layout=state)
+```
+
+```{r}
+f <-freq(x,  useNA='no')
+merge(levels(x), f, by=1)
+```
+
+Ignoring the influence of water and wetlands, the counts above allow us to conclude that deserts have seen the greatest abundance of conversion to agricultural and urban areas.
+
+
+
+
 
