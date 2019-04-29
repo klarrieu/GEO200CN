@@ -1,0 +1,147 @@
+---
+title: "GEO 200CN Lab 5"
+author: "Kenneth Larrieu"
+date: "April 29, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Spatial Autocorrelation
+
+## The area of a polygon
+
+```{r}
+# import rspatial package
+library(rspatial)
+
+# create polygon coords
+pol <- matrix(c(1.7, 2.6, 5.6, 8.1, 7.2, 3.3, 1.7, 4.9, 7, 7.6, 6.1, 2.7, 2.7, 4.9), ncol=2)
+
+# import raster library and make coords into polygon object
+library(raster)
+sppol <- spPolygons(pol)
+
+# create negative polygon
+negpol <- rbind(pol[c(1,6:4),], cbind(pol[4,1], 0), cbind(pol[1,1], 0))
+spneg <- spPolygons(negpol)
+
+# plot them
+cols <- c('light gray', 'light blue')
+plot(sppol, xlim=c(1,9), ylim=c(1,10), col=cols[1], axes=FALSE, xlab='', ylab='',
+      lwd=2, yaxs="i", xaxs="i")
+plot(spneg, col=cols[2], add=T)
+plot(spneg, add=T, density=8, angle=-45, lwd=1)
+segments(pol[,1], pol[,2], pol[,1], 0)
+text(pol, LETTERS[1:6], pos=3, col='red', font=4)
+arrows(1, 1, 9, 1, 0.1, xpd=T)
+arrows(1, 1, 1, 9, 0.1, xpd=T)
+text(1, 9.5, 'y axis', xpd=T)
+text(10, 1, 'x axis', xpd=T)
+legend(6, 9.5, c('"positive" area', '"negative" area'), fill=cols, bty = "n")
+```
+
+
+```{r}
+# compute polygon area
+# get clockwise adjacent points
+p <- rbind(pol, pol[1,])
+# take differenct in x
+x <- p[-1,1] - p[-nrow(p),1]
+# take average y value
+y <- (p[-1,2] + p[-nrow(p),2]) / 2
+# sum their product
+sum(x * y)
+```
+
+
+## Contact Numbers
+
+```{r}
+# Lower 48 data
+usa <- raster::getData('GADM', country='USA', level=1)
+usa <- usa[! usa$NAME_1 %in% c('Alaska', 'Hawaii'), ]
+
+library(spdep)
+wus <- poly2nb(usa, row.names=usa$OBJECTID, queen=FALSE)
+wus
+
+# create adjacency matrix (style = B = binary)
+wmus <- nb2mat(wus, style='B', zero.policy = TRUE)
+dim(wmus)
+```
+
+```{r}
+counties <- raster::getData('GADM', country='USA', level=2)
+county_neighbors = poly2nb(counties, row.names = counties$OBJECTID, queen=FALSE)
+county_w = nb2mat(county_neighbors, style='B', zero.policy=TRUE)
+```
+
+```{r}
+
+```
+
+## Spatial Structure
+
+
+```{r}
+# load auckland data
+pols <- sp_data("auctb.rds")
+
+# plot areas shaded by number of TB cases
+par(mai=c(0,0,0,0))
+classes <- seq(0,450,50)
+cuts <- cut(pols$TB, classes)
+n <- length(classes)
+cols <- rev(gray(0:n / n))
+plot(pols, col=cols[as.integer(cuts)])
+legend('bottomleft', levels(cuts), fill=cols)
+```
+
+```{r}
+# rook's case neighborhood
+wr <- poly2nb(pols, row.names=pols$Id, queen=FALSE)
+class(wr)
+summary(wr)
+```
+
+```{r}
+par(mai=c(0,0,0,0))
+plot(pols, col='gray', border='blue')
+xy <- coordinates(pols)
+plot(wr, xy, col='red', lwd=2, add=TRUE)
+```
+
+```{r}
+# create a matrix from the links list
+wm <- nb2mat(wr, style='B')
+dim(wm)
+```
+
+```{r}
+wr[1:6]
+```
+
+
+**Question 1**:Explain the meaning of the first lines returned by `wr[1:6]`.
+
+Returns a list of lists, where for each index it returns a list of all its neighbors' indices.
+
+## Spatial Autocorrelation
+
+```{r}
+# get y value (TB incidents)
+y <- pols$TB
+# get average y value
+ybar <- mean(y)
+# deviations from mean
+dy <- y - ybar
+# expand into grid of all possible pairs
+g <- expand.grid(dy, dy)
+# yi * yj = product of value in first column and second
+yiyj <- g[,1] * g[,2]
+# make a matrix of these products (yi - ybar)(yj - ybar)
+pm <- matrix(yiyj, ncol=n)
+```
