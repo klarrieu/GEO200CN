@@ -19,10 +19,12 @@ y <-c(0,1,0,1,0,1,0,1,1,1,0,0,0,0,1,1)
 # x: travel time by car
 x <-c(32,89,50,49,80,56,40,70,72,76,32,58, 12, 15, 110, 120)
 
+# perform logistic regression
 gm <-glm(y~x, family=binomial)
 summary(gm)
 ```
 ```{r}
+# anova can be used to assess how useful variables are for fitting
 anova(gm, test="Chisq")
 ```
 
@@ -38,7 +40,7 @@ x <-c(32,89,50,49,80,56,40,70,72,76,32,58, 12, 15, 110, 120)
 But the below gives an error:
 `gm <- glm(y~x, family=binomial)`
 
-*Question 1: How can you fix that? Please complete the code below
+**Question 1**: How can you fix that? Please complete the code below
 
 ```{r}
 y <- c('No','Yes','No','Yes','No','Yes','No','Yes','Yes','Yes','No','No','No','No','Yes','Yes')
@@ -55,17 +57,27 @@ s <- read.csv('samples.csv', stringsAsFactors=FALSE)
 head(s)
 ```
 
+**Question 2**. How many records do we have?
+
 ```{r}
 nrow(s)
 ```
+
+**Question 3**. Remove the human dominated land cover (urban & agriculture), and also waterand wetland from 's' (because you would need additional predictors to adequately model these).
 
 ```{r}
 s = subset(s, !(whr %in% c('Urban', 'Agriculture', 'Water', 'Wetland')))
 ```
 
+**Question 4**. How many records do we have now?
+
 ```{r}
 nrow(s)
 ```
+
+To make a map of the locations of the records on top of a map of California, we need to get the boundary of CA, and tranform it to Teale Albers.
+
+**Question 5**. Finish the code below
 
 ```{r}
 library(raster)
@@ -82,13 +94,17 @@ points(s$x, s$y)
 ```
 
 ```{r}
+# import climate data as raster brick
 b = brick('climate.grd')
 b
 ```
 
 ```{r}
+# plot it
 plot(b)
 ```
+
+**Question 6**. Use the 'extract' function to extract raster cell values for each point
 
 ```{r}
 e = extract(b, s[1:2])
@@ -106,9 +122,15 @@ test <- s[i,]
 train <- s[-i,]
 ```
 
+**Question 7**. Check that we have taken about 20% of the samples for model training
+
 ```{r}
 nrow(test)/nrow(s)
 ```
+
+This is approximately equal to 0.20, as expected.
+
+Now we fit data using LDA:
 
 ```{r}
 library(MASS)
@@ -116,19 +138,21 @@ lda <-lda(whr~temperature+precipitation, data=train)
 lda
 ```
 
+**Question 8**. Make a confusion matrix
 
 ```{r}
 p <- predict(lda)
 tab <- table(train$whr, p$class)
-```
-
-```{r}
 tab
 ```
+
+**Question 9**. Compute the fraction correctly classified
 
 ```{r}
 sum(diag(tab))/sum(tab)
 ```
+
+**Question 10**. Now compute the fraction correctly classified for the model testing data.
 
 ```{r}
 # make predictions on test data
@@ -139,12 +163,19 @@ tab2 = table(test$whr, p2$class)
 sum(diag(tab2))/sum(tab2)
 ```
 
+**Question 11**. What class seems to be easy to predict well, and what class not?
 
 ```{r}
 tab2
 ```
 
-srrthjsnbsorgnaokrnrgojnj seems easiest to predict, and adfbkdjfb seems hardest to predict. Because sdgoijsdnfbjn
+From the confusion matrix, we see Desert seems easiest to predict, and Barren/Other seems hardest to predict.
+
+**Question 12**. Why might that be?
+
+Since Barren/Other seems to be a miscellaneous category, there may be no significant relationship between the climate and areas of this category. Conversely, Desert seems easiest to predict because deserts are strongly determined by their climate (e.g. low precipitation).
+
+Now predicting for all of CA:
 
 ```{r}
 pr <-predict(b, lda)# takes a little while
@@ -152,50 +183,52 @@ plot(pr)
 ```
 
 ```{r}
-lda$lev
-```
-
-```{r}
+# linking category to numeric id
 levs <-data.frame(ID=1:length(lda$lev), class=lda$lev)
 levs
-```
-
-```{r}
+# add to predicted data
 levels(pr) <- levs
 pr
 ```
 
 ```{r}
+# visualize the data
 library(rasterVis)
 levelplot(pr)
 ```
 
 ```{r}
+# make the colors nice
 cols <-rev(c('orange','yellow','green','beige','dark green','black'))
 levelplot(pr, col.regions=cols)
 ```
 
 ```{r}
+# load real land cover data
 v <-raster('calveg.grd')
 levels(v)
 ```
 
 ```{r}
+# plot the land cover data
 spplot(v)
 ```
 
 ```{r}
+# merge attribute table with predicted land cover
 m <-merge(levels(v)[[1]],levels(pr)[[1]], by.x='WHR10NAME', by.y='class', all.x=TRUE)
 m
 ```
 
 ```{r}
+# give veg data same coding system as predicted data
 v2 <-reclassify(v, m[,2:3])
 levels(v2) <-levels(pr)
 ```
 
 
 ```{r}
+# stack and plot the observed vs predicted data
 s <-stack(v2, pr)
 names(s) <-c('observed','predicted')
 cols <-rev(c('beige','orange','green','yellow','dark green','black'))
@@ -203,20 +236,23 @@ levelplot(s, col.regions=cols)
 ```
 
 ```{r}
+# show predicted land cover where true data is missing
 x <-mask(pr, v2, inverse=TRUE)
 levels(x) <-levels(pr)
 state <-list("sp.polygons", ca)
 spplot(x, col.regions=cols,  sp.layout=state)
 ```
 
+**Question 13**. Compare the "undisturbed" vegetation to the actual vegetation. What vegetation type has seen most conversion to agriculture and urban areas (see code below)?
+
 ```{r}
 f <-freq(x,  useNA='no')
 merge(levels(x), f, by=1)
 ```
 
-Ignoring the influence of water and wetlands, the counts above allow us to conclude that deserts have seen the greatest abundance of conversion to agricultural and urban areas.
+Ignoring the influence of water and wetlands, the counts above suggest that deserts have seen the greatest abundance of conversion to agricultural and urban areas.
 
+**Question 14**. How would you (conceptually or via R) test whether this is different from what could be expected by chance?
 
-
-
+One could compare the distribution of land cover categories to that of a random sampling of land cover types (e.g. Monte Carlo) to test if the frequencies observed are significantly different from what would be expected by chance.
 

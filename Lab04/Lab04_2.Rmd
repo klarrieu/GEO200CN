@@ -24,6 +24,7 @@ points(crime, col='red', cex=.5, pch='+')
 
 ```{r}
 tb <- sort(table(crime$CATEGORY))[-1]
+# count for each type of crime
 tb
 ```
 
@@ -36,9 +37,12 @@ xy <- unique(xy)
 
 
 ```{r}
+# get area of city
 CityArea <- raster::area(city)
+# density = crime locations per unit area
 dens <- nrow(xy) / CityArea
 dens
+# check CRS of city to see what area units are
 crs(city)
 ```
 
@@ -47,6 +51,8 @@ crs(city)
 Looking at the coordinate reference system, we see the units of city are in ft. Therefore, the units of 'dens' are unique crime incident locations per square foot.
 
 **Question 1b**: Question 1b:What is the number of crimes per km^2?
+
+Using the total number of crimes rather than just crime locations, and using the area of the city in km^2:
 
 ```{r}
 # change coordinate reference system units to km
@@ -58,38 +64,45 @@ city_km = spTransform(city, km_crs)
 # recalculate area and density using km^2
 CityArea_km <- raster::area(city_km)
 # use total number of crimes, not just unique crime locationss
-dens <- nrow(crime) / CityArea_km
+dens_km <- nrow(crime) / CityArea_km
 # number of crimes per km^2
-dens
+dens_km
 ```
 
 ```{r}
+# make a raster from city extent
 r <- raster(city)
+# set resolution
 res(r) <- 1000
 r
 ```
 
 ```{r}
+# rasterize polygon plot quadrants
 r <- rasterize(city, r)
 plot(r)
 quads <- as(r, 'SpatialPolygons')
 plot(quads, add=TRUE)
+# add points for crime locations
 points(crime, col='red', cex=.5)
 ```
 
 ```{r}
+# get quadrant counts
 nc <- rasterize(coordinates(crime), r, fun='count', background=0)
 plot(nc)
 plot(city, add=TRUE)
 ```
 
 ```{r}
+# mask data outside city
 ncrimes <- mask(nc, r)
 plot(ncrimes)
 plot(city, add=TRUE)
 ```
 
 ```{r}
+# quadrant count frequency plot
 f <- freq(ncrimes, useNA='no')
 plot(f, pch=20)
 ```
@@ -99,37 +112,46 @@ plot(f, pch=20)
 quadrats <- sum(f[,2])
 # number of cases
 cases <- sum(f[,1] * f[,2])
+# mean cases per quadrant
 mu <- cases / quadrats
 mu
 
+# calculate variance using data.frame
 ff <- data.frame(f)
 colnames(ff) <- c('K', 'X')
 ff$Kmu <- ff$K - mu
 ff$Kmu2 <- ff$Kmu^2
 ff$XKmu2 <- ff$Kmu2 * ff$X
 
+# variance
 s2 <- sum(ff$XKmu2) / (sum(ff$X)-1)
 s2
 
+# variance to mean ratio
 VMR <- s2 / mu
 VMR
 ```
 
 **Question 2**:What does this VMR score tell us about the point pattern?
 
-The VMR suggests clustering and that the crime distribution is not an IRP.
+The VMR of `r round(VMR, 2)` suggests clustering and that the crime distribution is not an IRP, since the VMR is much larger than 1.
 
 ```{r}
+# distance between crime coordinates
 d <- dist(xy)
 class(d)
 
+# make into distance matrix
 dm <- as.matrix(d)
 dm[1:5, 1:5]
 
+# set diagonals (distance to self) as NA
 diag(dm) <- NA
 dm[1:5, 1:5]
 
+# get minimum distance (dist to nearest neighbor)
 dmin <- apply(dm, 1, min, na.rm=TRUE)
+# mean minimum dist
 mdmin <- mean(dmin)
 
 wdmin <- apply(dm, 1, which.min)
@@ -164,6 +186,7 @@ plot(distance, Gd, xlim=c(0,500))
 ```
 
 ```{r}
+# make step plot which looks much nicer
 stepplot <- function(x, y, type='l', add=FALSE, ...) {
     x <- as.vector(t(cbind(x, c(x[-1], x[length(x)]))))
     y <- as.vector(t(cbind(y, y)))
@@ -221,19 +244,74 @@ plot(distance, Kd, type='l', lwd=2)
 **Question 4**: Create a single random pattern of events for the city, with the same number of events as the crime data (object xy). Use function 'spsample'.
 
 ```{r}
-
+# random sample of points within city bounds with same number of events as xy
+smpl = spsample(city, nrow(xy), "random")
 ```
 
 **Question 5**: Compute the G function for the observed data, and plot it on a single plot, together with the G function for the theoretical expectation (formula 5.12).
 
 ```{r}
-
+smpl_coords = coordinates(smpl)
+dm = as.matrix(dist(as.matrix(smpl_coords)))
+diag(dm) = NA
+dmin <- apply(dm, 1, min, na.rm=TRUE)
+# get the unique distances (for the x-axis)
+distance <- sort(unique(round(dmin)))
+# compute how many cases there with distances smaller that each x
+Gd <- sapply(distance, function(x) sum(dmin < x))
+# normalize to get values between 0 and 1
+Gd <- Gd / length(dmin)
+stepplot(distance, Gd, col='red')
+# density is the same as xy, so theoretical expectation of G is the same as for xy
+lines(0:2000, expected)
+legend(1200, .3,
+   c(expression(italic("G")["d"]), 'expected'),
+   lty=1, col=c('red', 'black'), lwd=2, bty="n")
 ```
 
 
 **Question 6**: (Difficult!) Do a Monte Carlo simulation (page 149) to see if the 'mean nearest distance' of the observed crime data is significantly different from a random pattern. Use a 'for loop'. First write 'pseudo-code'. That is, say in natural language what should happen. Then try to write R code that implements this.
 
-```{r}
+pseudo-code:
 
+in for loop (doing 1000 times):
+generate random sample points within city
+compute mean nearest neighbor distance for the sample
+save the value to a dataframe
+
+then, plot the distribution, and calculate mean and variance. Use this to describe the likelihood that the mean nearest distance for crime is significantly different from the random distribution.
+
+```{r}
+# initialize array
+mean_dmins = c()
+
+for (i in 1:1000)
+{
+  # generate random sampling
+  smpl = spsample(city, nrow(xy), "random")
+  # get distances between points
+  d = as.matrix(dist(coordinates(smpl)))
+  # ignore distances to self
+  diag(d) = NA
+  # get minimum distances
+  dmin <- apply(d, 1, min, na.rm=TRUE)
+  # get average min distance
+  avg = mean(dmin)
+  # save value to array
+  mean_dmins[i] = avg
+}
+
+mu = mean(mean_dmins)
+sigma = sd(mean_dmins)
+
+hist(mean_dmins, xlab="mean minimum neighbor distance", ylab="frequency")
+
+# number of standard deviations our crime data (xy) mean minimum distance is from mean of sampled distributions
+devs = (mdmin - mu)/sigma
 ```
 
+The distribution appears approximately normal with a mean of `r round(mu)` and standard deviation of `r round(sigma, 2)` Because the mean minimum distance for our crime data is approximately `r round(devs)` standard deviations smaller than the expected value, we can conclude that the mean minimum distance between crime locations is significantly different from that expected from a random pattern.
+
+**Question 7**:  Why is the result surprising, or not surprising?
+
+Because the p-value is so small (2.2e-16), population density appears be a good predictor of being booked for being drunk in public or committing arson. This is not surprising because crimes can't occur unless there's people around, so it stands to reason that areas with higher populations have higher occurences of crime. Also, police may patrol areas with higher population density more frequently, thus increasing the likelihood of being caught committing a crime in a high-density area.
