@@ -74,13 +74,17 @@ dim(wmus)
 ```
 
 ```{r}
+# load county data
 counties <- raster::getData('GADM', country='USA', level=2)
 county_neighbors = poly2nb(counties, row.names = counties$OBJECTID, queen=FALSE)
 county_w = nb2mat(county_neighbors, style='B', zero.policy=TRUE)
 ```
 
-```{r}
+Which county has 13 neighbors?
 
+```{r}
+county_names = paste(counties$NAME_2, counties$NAME_1, sep=' County, ')
+county_names[which(colSums(county_w) == 13 & counties$TYPE_2 == 'County')]
 ```
 
 ## Spatial Structure
@@ -132,6 +136,8 @@ Returns a list of lists, where for each index it returns a list of all its neigh
 ## Spatial Autocorrelation
 
 ```{r}
+# number of regions
+n <- length(pols)
 # get y value (TB incidents)
 y <- pols$TB
 # get average y value
@@ -144,4 +150,134 @@ g <- expand.grid(dy, dy)
 yiyj <- g[,1] * g[,2]
 # make a matrix of these products (yi - ybar)(yj - ybar)
 pm <- matrix(yiyj, ncol=n)
+
+# multiply with weight matrix
+pmw = pm * wm
+# sum to get covariance measure
+spmw = sum(pmw)
+
+# normalize: divide by sum of weights as well as variance
+MI = spmw/(sum(wm) * sum(dy^2)/n)
+MI
 ```
+
+```{r}
+# expected Moran's I
+EI = -1/(n-1)
+```
+
+Repeating the same analysis using `spdep`:
+
+```{r}
+# compute spatial weights list
+ww <- nb2listw(wr, style='B')
+# moran(y, weights_list, number of regions, sum of weight matrix)
+moran(pols$TB, ww, n=length(ww$neighbours), S0=Szero(ww))
+```
+
+testing for significance:
+
+```{r}
+moran.test(pols$TB, ww, randomisation=FALSE)
+```
+
+```{r}
+moran.mc(pols$TB, ww, nsim=99)
+```
+
+
+**Question 2**: How do you interpret these results (the significance tests)?
+
+Since the p-value is < 0.05, this indicates that the autocorrelation of TB between regions is significantly greater than would be expected due to randomness.
+
+**Question 3**: What would a good value be for ``nsim``?
+
+As mentioned in OSU, a good value for `nsim` would be 999.
+
+Making a Moran scatter plot:
+
+```{r}
+# number of features
+n <- length(pols)
+# get y values of neighboring features
+# wm * y : each column has y value if neighbor or zero if not neighbor
+ms <- cbind(id=rep(1:n, each=n), y=rep(y, each=n), value=as.vector(wm * y))
+# get nonzero values
+ms <- ms[ms[,3] > 0, ]
+# take average of each
+ams <- aggregate(ms[,2:3], list(ms[,1]), FUN=mean)
+ams <- ams[,-1]
+colnames(ams) <- c('y', 'spatially lagged y')
+head(ams)
+```
+
+```{r}
+plot(ams)
+reg <- lm(ams[,2] ~ ams[,1])
+abline(reg, lwd=2)
+abline(h=mean(ams[,2]), lt=2)
+abline(v=ybar, lt=2)
+```
+
+```{r}
+coefficients(reg)[2]
+```
+
+```{r}
+# using built-in function
+rwm <- mat2listw(wm, style='W')
+moran.plot(y, rwm)
+```
+
+
+**Question 4**: Show how to use the 'geary' function to compute Geary's C
+
+```{r}
+geary(pols$TB, ww, n, n-1, Szero(ww))
+```
+
+**Question 5**: Write your own Monte Carlo simulation test to compute p-values for Moran's I, replicating the results we obtained with the function from spdep. Show a figure similar to Figure 7.9 in OSU.
+
+```{r}
+# initialize array
+mc_is = c()
+
+#number of simulations
+nsim = 99
+
+for (i in 1:nsim){
+  # shuffle y values
+  y_sim = sample(y)
+  # re-compute Moran's I
+  val = moran(y_sim, ww, n=length(ww$neighbours), S0=Szero(ww))[[1]]
+  # save value to array
+  mc_is[i] = val
+}
+
+# get number of values above test value
+num_above = length(which(mc_is > MI))
+
+# compute p-value
+p = (num_above + 1)/(nsim+1)
+
+print('Monte Carlo simulation of Moran I')
+sprintf('number of simulations + 1 : %i', nsim+1)
+sprintf('p-value: %s', p)
+```
+
+```{r}
+# make plot
+hist(mc_is, main="Monte Carlo Simulation - Moran's I", xlab="Moran's I", ylab="Frequency", xlim=c(-0.2, 0.3))
+abline(v=MI, lty=2)
+text(MI-0.01, 15, "observed value", srt=90)
+```
+
+**Question 6**: Write your own Geary C function, by completing the function below
+
+```{r}
+gearyC <- ((n-1)/sum((y - ybar)^2)) * sum(wm * (rep(y, times=n) - rep(y, each=n))^2) / (2 * sum(wm))
+
+gearyC
+```
+
+
