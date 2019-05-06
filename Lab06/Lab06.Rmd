@@ -1,0 +1,59 @@
+---
+title: "GEO 200CN Lab 6"
+author: "Kenneth Larrieu"
+date: "May 6, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(rspatial)
+counties <- sp_data('counties')
+p <- sp_data('precipitation')
+head(p)
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+
+**Question 1**: Can you comment on weaknesses (and perhaps strengths) of the approaches I have shown?
+
+
+**Question 2**: Briefly comment on the results and the differences (if any) with the two home-brew examples.
