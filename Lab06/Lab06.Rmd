@@ -17,43 +17,230 @@ head(p)
 ```
 
 ```{r}
-
+plot(counties)
+points(p[,c('LONG', 'LAT')], col='red', pch=20)
 ```
 
 ```{r}
-
+p$pan <- rowSums(p[,6:17])
 ```
 
 ```{r}
-
+m <- lm(pan ~ ALT, data=p)
+m
 ```
 
 ```{r}
-
+alb <- CRS("+proj=aea +lat_1=34 +lat_2=40.5 +lat_0=0 +lon_0=-120 +x_0=0 +y_0=-4000000 +ellps=GRS80 +datum=NAD83 +units=m +no_defs")
+sp <- p
+coordinates(sp) = ~ LONG + LAT
+crs(sp) <- "+proj=longlat +datum=NAD83"
+spt <- spTransform(sp, alb)
+ctst <- spTransform(counties, alb)
 ```
 
 ```{r}
-
+library( spgwr )
+bw <- gwr.sel(pan ~ ALT, data=spt)
+bw
 ```
 
 ```{r}
-
+r <- raster(ctst, res=10000)
+r <- rasterize(ctst, r)
+newpts <- rasterToPoints(r)
 ```
 
 ```{r}
-
+g <- gwr(pan ~ ALT, data=spt, bandwidth=bw, fit.points=newpts[, 1:2])
+g
 ```
 
 ```{r}
-
+slope <- r
+intercept <- r
+slope[!is.na(slope)] <- g$SDF$ALT
+intercept[!is.na(intercept)] <- g$SDF$'(Intercept)'
+s <- stack(intercept, slope)
+names(s) <- c('intercept', 'slope')
+plot(s)
 ```
 
 ```{r}
+g
+```
 
+House Price
+
+```{r}
+houses <- sp_data("houses1990.csv")
+dim(houses)
+
+head(houses)
+```
+
+```{r}
+library(sp)
+coordinates(houses) <- ~longitude+latitude
+
+plot(houses, cex=0.5, pch=1, axes=TRUE)
+```
+
+```{r}
+library(raster)
+crs(houses) <- crs(counties)
+
+cnty <- over(houses, counties)
+head(cnty)
+```
+
+
+```{r}
+hd <- cbind(data.frame(houses), cnty)
+totpop <- tapply(hd$population, hd$NAME, sum)
+totpop
+```
+
+```{r}
+# total income
+hd$suminc <- hd$income * hd$households
+# now use aggregate (similar to tapply)
+csum <- aggregate(hd[, c('suminc', 'households')], list(hd$NAME), sum)
+# divide total income by number of households
+csum$income <- 10000 * csum$suminc / csum$households
+# sort
+csum <- csum[order(csum$income), ]
+head(csum)
+```
+
+Global Regression:
+
+```{r}
+hd$roomhead <- hd$rooms / hd$population
+hd$bedroomhead <- hd$bedrooms / hd$population
+hd$hhsize <- hd$population / hd$households
+
+# OLS
+m <- glm( houseValue ~ income + houseAge + roomhead + bedroomhead + population, data=hd)
+summary(m)
+```
+
+GWR by county:
+
+```{r}
+# remove records outside county boundaries
+hd2 <- hd[!is.na(hd$NAME), ]
+```
+
+```{r}
+# function to get regression coefficients
+regfun <- function(x)  {
+  dat <- hd2[hd2$NAME == x, ]
+  m <- glm(houseValue~income+houseAge+roomhead+bedroomhead+population, data=dat)
+  coefficients(m)
+}
+```
+
+```{r}
+# run regression for each county
+countynames <- unique(hd2$NAME)
+res <- sapply(countynames, regfun)
+```
+
+```{r}
+dotchart(sort(res['income', ]), cex=0.65)
+```
+
+```{r}
+resdf <- data.frame(NAME=colnames(res), t(res))
+head(resdf)
+```
+
+```{r}
+dcounties <- aggregate(counties, vars='NAME')
+cnres <- merge(dcounties, resdf, by='NAME')
+spplot(cnres, 'income')
+```
+
+```{r}
+# a copy of the data
+cnres2 <- cnres
+# scale all variables, except the first one (county name)
+# assigning values to a "@data" slot is risky, but (I think) OK here
+cnres2@data = data.frame(scale(data.frame(cnres)[, -1]))
+spplot(cnres2)
+```
+
+```{r}
+library(spdep)
+## Loading required package: Matrix
+nb <- poly2nb(cnres)
+plot(cnres)
+plot(nb, coordinates(cnres), add=T, col='red')
+```
+
+```{r}
+lw <- nb2listw(nb)
+moran.test(cnres$income, lw)
+```
+
+Alternate approach: GWR by grid cells
+
+```{r}
+TA <- CRS("+proj=aea +lat_1=34 +lat_2=40.5 +lat_0=0 +lon_0=-120 +x_0=0 +y_0=-4000000
+              +datum=NAD83 +units=m +no_defs +ellps=GRS80 +towgs84=0,0,0")
+countiesTA <- spTransform(counties, TA)
+```
+
+```{r}
+library(raster)
+r <- raster(countiesTA)
+res(r) <- 50000
+
+xy <- xyFromCell(r, 1:ncell(r))
+
+housesTA <- spTransform(houses, TA)
+crds <- coordinates(housesTA)
+
+regfun2 <- function(d)  {
+ m <- glm(houseValue~income+houseAge+roomhead+bedroomhead+population, data=d)
+ coefficients(m)
+}
+
+res <- list()
+for (i in 1:nrow(xy)) {
+    d <- sqrt((xy[i,1]-crds[,1])^2 + (xy[i,2]-crds[,2])^2)
+    j <- which(d < 50000)
+    if (length(j) > 49) {
+        d <- hd[j,]
+        res[[i]] <- regfun2(d)
+    } else {
+        res[[i]] <- NA
+    }
+}
+
+inc <- sapply(res, function(x) x['income'])
+
+rinc <- setValues(r, inc)
+plot(rinc)
+plot(countiesTA, add=T)
+```
+
+```{r}
+Moran(rinc)
 ```
 
 
 **Question 1**: Can you comment on weaknesses (and perhaps strengths) of the approaches I have shown?
+
+- GWR by county:
+
+- GWR by grid cells:
+
+
+```{r}
+
+```
 
 
 **Question 2**: Briefly comment on the results and the differences (if any) with the two home-brew examples.
