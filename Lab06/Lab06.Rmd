@@ -5,12 +5,17 @@ date: "May 6, 2019"
 output: html_document
 ---
 
+# Local Regression
+
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+## California Precipitation
+
 ```{r}
 library(rspatial)
+# load county polygons and spatial precipitation data
 counties <- sp_data('counties')
 p <- sp_data('precipitation')
 head(p)
@@ -22,15 +27,18 @@ points(p[,c('LONG', 'LAT')], col='red', pch=20)
 ```
 
 ```{r}
+# sum average precip over all months to get average annual precip
 p$pan <- rowSums(p[,6:17])
 ```
 
 ```{r}
+# global regression on precip as function of altitude
 m <- lm(pan ~ ALT, data=p)
 m
 ```
 
 ```{r}
+# give both objects same projection
 alb <- CRS("+proj=aea +lat_1=34 +lat_2=40.5 +lat_0=0 +lon_0=-120 +x_0=0 +y_0=-4000000 +ellps=GRS80 +datum=NAD83 +units=m +no_defs")
 sp <- p
 coordinates(sp) = ~ LONG + LAT
@@ -41,22 +49,26 @@ ctst <- spTransform(counties, alb)
 
 ```{r}
 library( spgwr )
+# local regression: get optimal bandwidth
 bw <- gwr.sel(pan ~ ALT, data=spt)
 bw
 ```
 
 ```{r}
+# create regular set of points to estimate precip for
 r <- raster(ctst, res=10000)
 r <- rasterize(ctst, r)
 newpts <- rasterToPoints(r)
 ```
 
 ```{r}
+# perform local regression using optimal bandwidth as before, and fit the new points
 g <- gwr(pan ~ ALT, data=spt, bandwidth=bw, fit.points=newpts[, 1:2])
 g
 ```
 
 ```{r}
+# link spatially distributed regression coefficients back to raster and plot it
 slope <- r
 intercept <- r
 slope[!is.na(slope)] <- g$SDF$ALT
@@ -66,13 +78,10 @@ names(s) <- c('intercept', 'slope')
 plot(s)
 ```
 
-```{r}
-g
-```
-
-House Price
+## House Price Data
 
 ```{r}
+# load data
 houses <- sp_data("houses1990.csv")
 dim(houses)
 
@@ -82,21 +91,24 @@ head(houses)
 ```{r}
 library(sp)
 coordinates(houses) <- ~longitude+latitude
-
+# plot coordinates of census blockgroups
 plot(houses, cex=0.5, pch=1, axes=TRUE)
 ```
 
 ```{r}
 library(raster)
+# give houses same crs as counties
 crs(houses) <- crs(counties)
-
+# match house data points to corresponding county
 cnty <- over(houses, counties)
 head(cnty)
 ```
 
 
 ```{r}
+# combine county data and house data into single dataframe
 hd <- cbind(data.frame(houses), cnty)
+# calculate total population by county
 totpop <- tapply(hd$population, hd$NAME, sum)
 totpop
 ```
@@ -113,7 +125,7 @@ csum <- csum[order(csum$income), ]
 head(csum)
 ```
 
-Global Regression:
+### Global Regression:
 
 ```{r}
 hd$roomhead <- hd$rooms / hd$population
@@ -125,7 +137,7 @@ m <- glm( houseValue ~ income + houseAge + roomhead + bedroomhead + population, 
 summary(m)
 ```
 
-GWR by county:
+### GWR by county:
 
 ```{r}
 # remove records outside county boundaries
@@ -184,7 +196,7 @@ lw <- nb2listw(nb)
 moran.test(cnres$income, lw)
 ```
 
-Alternate approach: GWR by grid cells
+### Alternate approach: GWR by grid cells
 
 ```{r}
 TA <- CRS("+proj=aea +lat_1=34 +lat_2=40.5 +lat_0=0 +lon_0=-120 +x_0=0 +y_0=-4000000
@@ -196,17 +208,18 @@ countiesTA <- spTransform(counties, TA)
 library(raster)
 r <- raster(countiesTA)
 res(r) <- 50000
-
+# get coordinates of each raster cell
 xy <- xyFromCell(r, 1:ncell(r))
-
+# convert houses to TA crs
 housesTA <- spTransform(houses, TA)
 crds <- coordinates(housesTA)
 
+# define regression function which returns local coefficients
 regfun2 <- function(d)  {
  m <- glm(houseValue~income+houseAge+roomhead+bedroomhead+population, data=d)
  coefficients(m)
 }
-
+# get all local regression coefficients
 res <- list()
 for (i in 1:nrow(xy)) {
     d <- sqrt((xy[i,1]-crds[,1])^2 + (xy[i,2]-crds[,2])^2)
@@ -233,14 +246,435 @@ Moran(rinc)
 
 **Question 1**: Can you comment on weaknesses (and perhaps strengths) of the approaches I have shown?
 
-- GWR by county:
+- GWR by county: The size and geometry of each county is highly variable, e.g. SF county compared to San Bernadino county. Thus, the county polygons used to define a local neighborhood for GWR are somewhat arbitrary. Whatever determinines the spatial variation in the effect of input variables on house price may not be dependent upon county boundaries, but instead proximity to other areas. 
 
-- GWR by grid cells:
+- GWR by grid cells: The grid cell size does not allow us to predict values for the entire state.
 
+In both cases, the GWR may be susceptible to multicollinearity issues due to correlation between input variables for some of the local models.
+
+### spgwr package
 
 ```{r}
+library(spgwr)
+# Create raster with correct extent and 25km resolution
+r <- raster(countiesTA)
+res(r) <- 25000
+# get cells in CA
+ca <- rasterize(countiesTA, r)
+fitpoints <- rasterToPoints(ca)
+fitpoints <- fitpoints[,-3]
+# specify the model
+gwr.model <- gwr(formula=houseValue~income+houseAge+rooms+bedrooms+population, data=housesTA, bandwidth=40000, fit.points=fitpoints)
+  
+sp <- gwr.model$SDF
 
+spplot(sp, 'income')
+
+cells <- cellFromXY(r, fitpoints)
+dd <- as.matrix(data.frame(sp))
+b <- brick(r, values=FALSE, nl=ncol(dd))
+b[cells] <- dd
+names(b) <- colnames(dd)
+plot(b)
 ```
 
 
 **Question 2**: Briefly comment on the results and the differences (if any) with the two home-brew examples.
+
+This method has a much finer resolution due to the lack of aggregation on a county/grid scale, but rather by bandwidth, so it seems to represent the local variation better.
+
+
+# Interpolation
+
+```{r}
+library(rspatial)
+# load precipitation dataframe
+d <- sp_data('precipitation')
+head(d)
+
+# calculate annual precip
+d$prec <- rowSums(d[, c(6:17)])
+# plot distribution
+plot(sort(d$prec), ylab='Annual precipitation (mm)', las=1, xlab='Stations')
+
+library(sp)
+# make data into spatial object
+dsp <- SpatialPoints(d[,4:3], proj4string=CRS("+proj=longlat +datum=NAD83"))
+dsp <- SpatialPointsDataFrame(dsp, d)
+CA <- sp_data("counties")
+# define groups for mapping
+cuts <- c(0,200,300,500,1000,3000)
+# set up a palette of interpolated colors
+blues <- colorRampPalette(c('yellow', 'orange', 'blue', 'dark blue'))
+pols <- list("sp.polygons", CA, fill = "lightgray")
+spplot(dsp, 'prec', cuts=cuts, col.regions=blues(5), sp.layout=pols, pch=20, cex=2)
+
+# convert data to Teale-Albers
+TA <- CRS("+proj=aea +lat_1=34 +lat_2=40.5 +lat_0=0 +lon_0=-120 +x_0=0 +y_0=-4000000 +datum=NAD83 +units=m +ellps=GRS80 +towgs84=0,0,0")
+library(rgdal)
+dta <- spTransform(dsp, TA)
+cata <- spTransform(CA, TA)
+```
+
+We can get the RMSE for the null model (the data mean) as a baseline comparison against other models:
+
+```{r}
+# make a function which calculates RMSE
+RMSE <- function(observed, predicted) {
+  sqrt(mean((predicted - observed)^2, na.rm=TRUE))
+}
+
+# calculate RMSE for null model
+null <- RMSE(mean(dsp$prec), dsp$prec)
+null
+```
+
+### Thiessen polygons
+
+```{r}
+library(dismo)
+v <- voronoi(dta)
+plot(v)
+```
+
+Interesect with CA boundary so it doesn't look so weird, and color by precip of nearest gague
+
+```{r}
+ca <- aggregate(cata)
+vca <- intersect(v, ca)
+spplot(vca, 'prec', col.regions=rev(get_col_regions()))
+```
+
+Converting these polygons to a raster:
+
+```{r}
+r <- raster(cata, res=10000)
+vr <- rasterize(vca, r, 'prec')
+plot(vr)
+```
+
+Now evaluate with 5-fold cross-validation:
+
+```{r}
+set.seed(5132015)
+kf <- kfold(nrow(dta))
+rmse <- rep(NA, 5)
+for (k in 1:5) {
+  test <- dta[kf == k, ]
+  train <- dta[kf != k, ]
+  v <- voronoi(train)
+  p <- extract(v, test)
+  rmse[k] <- RMSE(test$prec, p$prec)
+}
+
+rmse
+
+mean(rmse)
+
+1 - (mean(rmse) / null)
+
+```
+
+**Question 1:**  Describe what each step in the code chunk above does.
+
+The first line "sets a seed" for random number generation so that the code can be run multiple times with the same random numbers and yield the same result. `kf` partitions the data into 5 radom samples of equal size, by providing a list of indices indicating which partitioned set each datum belongs to. The RMSEs are initialized as `NA` so that if the calculation fails it returns a null result. The loop then iterates over each data partition, uses the 1/5 partition as training (in this case trains it using Thiessen/Voronoi polygons) and the other 4/5 is used as testing, by extracting the values of the trained model in the locations of the test points. The RMSE is then calculated between the actual test data values and that predicted by the proximity polygons.
+
+**Question 2:** How does the proximity-polygon approach compare to the NULL model?
+
+From the last output above we see that the Thiessen polygon model achieves ~55% reduction in RMSE compared to the null model.
+
+**Question 3:** You would not typically use proximty polygons for rainfall data. For what kind of data would you use them?
+
+Proximity polygons are best suited for categorical variables, e.g. land cover type.
+
+## Nearest neighbor interpolation
+
+Setting inverse distance power to 0 and `nmax=5` uses the 5 nearest neighbors weighted equally:
+
+```{r}
+library(gstat)
+gs <- gstat(formula=prec~1, locations=dta, nmax=5, set=list(idp = 0))
+nn <- interpolate(r, gs)
+## [inverse distance weighted interpolation]
+nnmsk <- mask(nn, vr)
+plot(nnmsk)
+```
+
+Cross-validate the results:
+
+```{r}
+rmsenn <- rep(NA, 5)
+for (k in 1:5) {
+  test <- dta[kf == k, ]
+  train <- dta[kf != k, ]
+  gscv <- gstat(formula=prec~1, locations=train, nmax=5, set=list(idp = 0))
+  p <- predict(gscv, test)$var1.pred
+  rmsenn[k] <- RMSE(test$prec, p)
+}
+
+rmsenn
+
+mean(rmsenn)
+
+1 - (mean(rmsenn) / null)
+```
+
+Now using inverse distance weighted (IDW) interpolation:
+
+```{r}
+gs <- gstat(formula=prec~1, locations=dta)
+idw <- interpolate(r, gs)
+## [inverse distance weighted interpolation]
+idwr <- mask(idw, vr)
+plot(idwr)
+```
+
+**Question 4:** IDW generated rasters tend to have a noticeable artefact. What is that?
+
+IDW generated rasters tend to have a "spotted" look, due to the isotropic weighting of each gague.
+
+Cross validating the IDW model:
+
+```{r}
+rmse <- rep(NA, 5)
+for (k in 1:5) {
+  test <- dta[kf == k, ]
+  train <- dta[kf != k, ]
+  gs <- gstat(formula=prec~1, locations=train)
+  p <- predict(gs, test)
+  rmse[k] <- RMSE(test$prec, p$var1.pred)
+}
+
+rmse
+
+mean(rmse)
+
+1 - (mean(rmse) / null)
+```
+
+**Question 5:** Inspect the arguments used for and make a map of the IDW model below. What other name could you give to this method (IDW with these parameters)? Why?
+
+```{r}
+gs2 <- gstat(formula=prec~1, locations=dta, nmax=1, set=list(idp=1))
+```
+
+This code chunk is actually just nearest neighbor/proximity polygon interpolation, since it is only using one neighbor (`nmax=1`), and the inverse distance power weights are normalized to unity. Therefore, it assigns each point the value of the nearest gague.
+
+## CA Air Pollution Data
+
+```{r}
+x <- sp_data("airqual")
+x$OZDLYAV <- x$OZDLYAV * 1000
+
+library(sp)
+coordinates(x) <- ~LONGITUDE + LATITUDE
+proj4string(x) <- CRS('+proj=longlat +datum=NAD83')
+TA <- CRS("+proj=aea +lat_1=34 +lat_2=40.5 +lat_0=0 +lon_0=-120 +x_0=0 +y_0=-4000000 +datum=NAD83 +units=km +ellps=GRS80")
+library(rgdal)
+aq <- spTransform(x, TA)
+
+cageo <- sp_data('counties.rds')
+ca <- spTransform(cageo, TA)
+r <- raster(ca)
+res(r) <- 10  # 10 km if your CRS's units are in km
+g <- as(r, 'SpatialGrid')
+```
+
+
+Plotting an empirical variogram:
+
+```{r}
+library(gstat)
+gs <- gstat(formula=OZDLYAV~1, locations=aq)
+v <- variogram(gs, width=20)
+head(v)
+
+plot(v)
+```
+
+Fitting and plotting a model variogram:
+
+```{r}
+fve <- fit.variogram(v, vgm(85, "Exp", 75, 20))
+fve
+
+plot(variogramLine(fve, 400), type='l', ylim=c(0,120))
+points(v[,2:3], pch=20, col='red')
+```
+
+Try a different type (spherical in stead of exponential)
+
+```{r}
+fvs <- fit.variogram(v, vgm(85, "Sph", 75, 20))
+fvs
+
+plot(variogramLine(fvs, 400), type='l', ylim=c(0,120) ,col='blue', lwd=2)
+points(v[,2:3], pch=20, col='red')
+```
+
+## Ordinary Kriging
+
+```{r}
+k <- gstat(formula=OZDLYAV~1, locations=aq, model=fve)
+# predicted values
+kp <- predict(k, g)
+## [using ordinary kriging]
+spplot(kp)
+```
+
+```{r}
+# variance
+ok <- brick(kp)
+ok <- mask(ok, ca)
+names(ok) <- c('prediction', 'variance')
+plot(ok)
+```
+
+### Compare with other methods
+
+Using IDW again:
+
+```{r}
+library(gstat)
+idm <- gstat(formula=OZDLYAV~1, locations=aq)
+idp <- interpolate(r, idm)
+## [inverse distance weighted interpolation]
+idp <- mask(idp, ca)
+plot(idp)
+```
+
+
+```{r}
+RMSE <- function(observed, predicted) {
+  sqrt(mean((predicted - observed)^2, na.rm=TRUE))
+}
+f1 <- function(x, test, train) {
+  nmx <- x[1]
+  idp <- x[2]
+  if (nmx < 1) return(Inf)
+  if (idp < .001) return(Inf)
+  m <- gstat(formula=OZDLYAV~1, locations=train, nmax=nmx, set=list(idp=idp))
+  p <- predict(m, newdata=test, debug.level=0)$var1.pred
+  RMSE(test$OZDLYAV, p)
+}
+set.seed(20150518)
+i <- sample(nrow(aq), 0.2 * nrow(aq))
+tst <- aq[i,]
+trn <- aq[-i,]
+opt <- optim(c(8, .5), f1, test=tst, train=trn)
+opt
+```
+
+
+```{r}
+m <- gstat(formula=OZDLYAV~1, locations=aq, nmax=opt$par[1], set=list(idp=opt$par[2]))
+idw <- interpolate(r, m)
+## [inverse distance weighted interpolation]
+idw <- mask(idw, ca)
+plot(idw)
+```
+
+Thin plate spline model:
+
+```{r}
+library(fields)
+m <- Tps(coordinates(aq), aq$OZDLYAV)
+tps <- interpolate(r, m)
+tps <- mask(tps, idw)
+plot(tps)
+```
+
+Cross-validate the three methods (IDW, OK, TPS) and add ensemble model:
+
+
+```{r}
+library(dismo)
+nfolds <- 5
+k <- kfold(aq, nfolds)
+ensrmse <- tpsrmse <- krigrmse <- idwrmse <- rep(NA, 5)
+for (i in 1:nfolds) {
+  test <- aq[k!=i,]
+  train <- aq[k==i,]
+  m <- gstat(formula=OZDLYAV~1, locations=train, nmax=opt$par[1], set=list(idp=opt$par[2]))
+  p1 <- predict(m, newdata=test, debug.level=0)$var1.pred
+  idwrmse[i] <-  RMSE(test$OZDLYAV, p1)
+  m <- gstat(formula=OZDLYAV~1, locations=train, model=fve)
+  p2 <- predict(m, newdata=test, debug.level=0)$var1.pred
+  krigrmse[i] <-  RMSE(test$OZDLYAV, p2)
+  m <- Tps(coordinates(train), train$OZDLYAV)
+  p3 <- predict(m, coordinates(test))
+  tpsrmse[i] <-  RMSE(test$OZDLYAV, p3)
+  w <- c(idwrmse[i], krigrmse[i], tpsrmse[i])
+  weights <- w / sum(w)
+  ensemble <- p1 * weights[1] + p2 * weights[2] + p3 * weights[3]
+  ensrmse[i] <-  RMSE(test$OZDLYAV, ensemble)
+}
+rmi <- mean(idwrmse)
+rmk <- mean(krigrmse)
+rmt <- mean(tpsrmse)
+rms <- c(rmi, rmt, rmk)
+rms
+## [1] 8.041305 8.307235 7.930799
+rme <- mean(ensrmse)
+rme
+## [1] 7.858051
+```
+
+**Question 6:** Which method performed best?
+
+Out of the three methods, the thin plate spline performed the best with an RMSE of `{r} rms[3]`. However, the ensemble method performed the best, as it had the lowest RMSE of `{r} rme`. 
+
+Making the weighted ensemble and plotting it along with the other three methods:
+
+```{r}
+weights <- ( rms / sum(rms) )
+s <- stack(idw, ok[[1]], tps)
+ensemble <- sum(s * weights)
+
+s <- stack(idw, ok[[1]], tps, ensemble)
+names(s) <- c('IDW', 'OK', 'TPS', 'Ensemble')
+plot(s)
+```
+
+**Question 7:** Show where the largest difference exist between IDW and OK.
+
+```{r}
+# difference between IDW and OK
+diff = s$IDW - s$OK
+# get location of maximum difference
+i = which.max(diff)
+pos = xyFromCell(diff,i)
+pos = SpatialPoints(pos)
+# plot it
+plot(diff, main="IDW - OK")
+plot(pos, add=T, pch=20, col='red', cex=2)
+text(pos, labels='max difference', pos=4)
+```
+
+**Question 8:** Show where the difference between IDW and OK is within the 95% confidence limit of the OK prediction.
+
+```{r}
+# calculate OK confidence interval
+# z score for 95% confidence interval
+z = 1.96
+# standard deviation of the values
+sigma = sqrt(ok$variance)
+# number of observations
+n = length(aq)
+# lower and upper confidence interval bounds
+ci_lower = ok$prediction - z*sigma/sqrt(n)
+ci_upper = ok$prediction + z*sigma/sqrt(n)
+# check if diff is within confidence interval
+in_ci = idw
+in_ci[in_ci < ci_lower] = NA
+in_ci[in_ci > ci_upper] = NA
+# plot it
+plot(in_ci, main='IDW predictions outside Kriging CI')
+plot(aggregate(ca), add=T)
+spplot(aq, 'OZDLYAV', main='Air Quality gague locations', cex=0.5, sp.layout = aggregate(ca), add=T)
+plot(ok$variance)
+```
+
+**Question 9:** Can you describe the pattern we are seeing, and speculate about what is causing it?
+
+The IDW predictions outside the Kriging CI appear to occur more often in areas near air quality gague locations, which also corresponds to areas where Kriging estimates low variance. Thus, these areas correspond to smaller confidence interval bands, making it easier for IDW to fall outside of them. The only other areas where IDW falls outside the Kriging CI appears to be locations near the border such as the Northeast corner. These areas have high estimated variance but may also have large differences in the IDW predictions, potentially due to anisotropic weighting effects.
