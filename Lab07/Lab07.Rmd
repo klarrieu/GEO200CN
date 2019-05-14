@@ -127,3 +127,144 @@ apply(as.matrix(1:3), 1, err_rate2)
 ```
 
 Now we see that adding the dummy variable for `student` actually led to a slight increase in our misclassification rates for all seeds 1-3. This may suggest that this model is more biased towards the training data.
+
+## Part 2: ISLR Chapter 7
+
+```{r}
+d = read.csv('temperature.csv')
+head(d)
+```
+
+```{r}
+# get average annual temperature
+d$temp = rowMeans(d[,c(6:17)])
+plot(sort(d$temp), ylab=expression('Annual Average Temperature ('~degree~'C)'), las=1, xlab='Stations')
+```
+
+```{r}
+library(raster)
+# make points for each location
+dsp = SpatialPoints(d[,3:4], proj4string=CRS('+proj=longlat +datum=NAD83'))
+# combine with data frame
+dsp = SpatialPointsDataFrame(dsp, d)
+dsp
+```
+
+```{r}
+cuts <- c(8,11,14,18,21,25)
+pols <- list("sp.polygons", CA, fill = "lightblue")
+print(spplot(dsp, 'temp', cuts=cuts, sp.layout=pols,
+col.regions=rev(heat.colors(5))))
+```
+
+### Null Model
+
+```{r}
+# use the mean average annual temp as a null model
+tavg = mean(d$temp)
+# local deviations from the mean
+dsp$diff = dsp$temp - tavg
+
+print(spplot(dsp, 'diff', col.regions=rev(heat.colors(5)),
+sp.layout=pols, main = "unexplained variation" ))
+```
+
+Computing RMSE for the null model:
+
+```{r}
+RMSE = function(observed, predicted){
+  sqrt(mean((predicted-observed)^2, na.rm=TRUE))
+}
+
+RMSE(d$temp, tavg)
+```
+
+```{r}
+# transform data to Teale-Albers
+TA <- CRS(" +proj=aea +lat_1=34 +lat_2=40.5 +lat_0=0 +lon_0=-120 +x_0=0
++y_0=-4000000 +datum=NAD83 +units=m +no_defs +ellps=GRS80 +towgs84=0,0,0")
+library(rgdal)
+dta <- spTransform(dsp, TA)
+cata <- spTransform(CA, TA)
+
+# set sampling for cross-validation
+set.seed(5162016)
+library(dismo)
+k <- kfold(dta)
+table(k)
+
+test <- dta[k==1, ]
+train <- dta[k!=1, ]
+```
+
+## Linear Model
+
+```{r}
+# make training dataframe of coordinates and temp
+df <- data.frame(coordinates(train), temp=train$temp)
+colnames(df)[1:2] = c('x', 'y')
+
+# fit temp as linear function of x and y coords
+m <- glm(temp ~ x+y, data=df)
+summary(m)
+```
+
+**Question 2:** Describe (in statistical terms) and explain (in physical terms) the results shown by `summary(m)`.
+
+The results show that for a linear model the average annual temperature has a non-significant dependence on the x coordinate, while there is a significant dependence on the y coordinate. This indicates physically that the average annual temperature does not vary significantly with longitude, and because the y coefficient is negative, it indicates that at lower y values (i.e. latitudes closer to the equator) the temperatures are typically warmer and vice versa. This agrees with expectations because the Mojave Desert is in the south and typically hotter.
+
+**Question 3:** According to this model. How much does the temperature in California change if you travel 500 miles to the north (show the R code to compute that)
+
+```{r}
+coefficients(m)[['y']]*500*1609.34 # degrees/m * mi * m/mi
+```
+
+So according to the model, the temperature decreases by approximately 6.98 degrees C when one travels 500 miles north. 
+
+```{r}
+# predict on the test data
+v <- data.frame(coordinates(test))
+colnames(v)[1:2] = c('x', 'y')
+p <- predict(m, v)
+
+# compare RMSE for null and linear models
+# null model
+RMSE(mean(train$temp), test$temp)
+# linear model
+RMSE(p, test$temp)
+```
+
+```{r}
+# plot observed vs. predicted test data temps
+plot(test$temp, p, xlim=c(5,25), ylim=c(5,25), pch=20,
+col='blue', xlab='observed', ylab='predicted')
+# for reference: y=x
+abline(0,1)
+```
+
+```{r}
+# 5-fold cross-validation
+r <- rep(NA,5)
+for (i in 1:5) {
+test <- dta[k==i, ]
+train <- dta[k!=i, ]
+df <- data.frame(coordinates(train), temp=train$temp)
+m <- glm(temp ~ ., data=df)
+v <- data.frame(coordinates(test))
+p <- predict(m, v)
+r[i] <- RMSE(p, test$temp)
+}
+r
+
+mean(r)
+```
+
+**Question 4:** Was it important to do 5-fold cross-validation, instead of a single 20-80 split?
+
+Although in this case the first test RMSE was very close to the average, it is always preferred to dp the full 5-fold cross validation over a single 20-80 split because it provides a more reliable estimate of the model performance given different sample subsets of the data. For example, if the second training/test sets alone had been used, it would have estimated test RMSE as 3.22, which could give a false impression that the linear model performs worse than the null model.
+
+```{r}
+# create 10km resolution raster
+r <- raster(round(extent(cata)), res=10000, crs=TA)
+
+```
