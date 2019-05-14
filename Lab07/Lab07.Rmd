@@ -263,8 +263,90 @@ mean(r)
 
 Although in this case the first test RMSE was very close to the average, it is always preferred to dp the full 5-fold cross validation over a single 20-80 split because it provides a more reliable estimate of the model performance given different sample subsets of the data. For example, if the second training/test sets alone had been used, it would have estimated test RMSE as 3.22, which could give a false impression that the linear model performs worse than the null model.
 
+Now predicting values for grid cells:
+
 ```{r}
 # create 10km resolution raster
 r <- raster(round(extent(cata)), res=10000, crs=TA)
 
+# get the x coordinates
+x <- init(r, v='x')
+# set areas outside of CA to NA
+x <- mask(x, cata)
+# get the y coordinates
+y <- init(r, v='y')
+# combine the two variables (RasterLayers)
+s <- stack(x,y)
+names(s) <- c('x', 'y')
+
+df <- data.frame(coordinates(dta), temp=dta$temp)
+colnames(df)[1:2] = c('x', 'y')
+m <- glm(temp ~ ., data=df)
+
+# can use interpolate instead of predict since it knows to use coordinates
+z <- interpolate(r, m)
+mask <- mask(z, cata)
+zm <- mask(z, mask)
+plot(zm)
+contour(zm, add=TRUE)
+```
+
+```{r}
+# alternative model with interaction terms
+df <- data.frame(coordinates(dta), temp=dta$temp)
+colnames(df)[1:2] = c('x', 'y')
+test <- df[k==1, ]
+train <- df[k!=1, ]
+m <- glm(temp ~ x*y, data=train)
+summary(m)
+
+# check AIC and RMSE
+AIC(m)
+
+RMSE(predict(m, test), test$temp)
+
+# plot the model predictions
+z <- interpolate(r, m)
+zm <- mask(z, mask)
+plot(zm)
+contour(zm, add=TRUE)
+```
+
+```{r}
+# another alternative model with polynomial terms
+m <- glm(temp ~ x + y + I(x^2) + I(y^2), data=df)
+summary(m)
+AIC(m)
+RMSE(predict(m, test), test$temp)
+
+z <- interpolate(r, m)
+zm <- mask(z, mask)
+plot(zm)
+contour(zm, add=TRUE)
+```
+
+```{r}
+# second-order polynomials and interaction terms
+m <- glm(temp ~ poly(x, 2, raw=TRUE) * poly(y, 2, raw=TRUE), data=df)
+summary(m)
+AIC(m)
+RMSE(predict(m, test), test$temp)
+
+z <- interpolate(r, m)
+zm <- mask(z, mask)
+plot(zm)
+contour(zm, add=TRUE)
+```
+
+**Question 5:** What is the best model so far? Why?
+
+The model with second order polynomials and interaction terms is the best model so far, because it has the lowest test RMSE as well as the lowest AIC.
+
+**Question 6:** Rerun the last model using (a) ridge regression, and (b) lasso regression. Show the changes in coefficients for three values of lambda; by finishing the code below.
+
+```{r}
+f <- temp ~ poly(x, 2, raw=TRUE) * poly(y, 2, raw=TRUE)
+x <- model.matrix(f, df)
+library(glmnet)
+g <- glmnet(x, df$temp)
 ```
