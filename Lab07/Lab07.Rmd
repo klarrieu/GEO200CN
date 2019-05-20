@@ -143,6 +143,7 @@ plot(sort(d$temp), ylab=expression('Annual Average Temperature ('~degree~'C)'), 
 
 ```{r}
 library(raster)
+CA <- shapefile("counties_2000.shp")
 # make points for each location
 dsp = SpatialPoints(d[,3:4], proj4string=CRS('+proj=longlat +datum=NAD83'))
 # combine with data frame
@@ -327,7 +328,7 @@ contour(zm, add=TRUE)
 
 ```{r}
 # second-order polynomials and interaction terms
-m <- glm(temp ~ poly(x, 2, raw=TRUE) * poly(y, 2, raw=TRUE), data=df)
+m <- glm(temp ~ poly(x, 2, raw=TRUE) * poly(y, 2, raw=TRUE), data=train)
 summary(m)
 AIC(m)
 RMSE(predict(m, test), test$temp)
@@ -348,5 +349,138 @@ The model with second order polynomials and interaction terms is the best model 
 f <- temp ~ poly(x, 2, raw=TRUE) * poly(y, 2, raw=TRUE)
 x <- model.matrix(f, df)
 library(glmnet)
-g <- glmnet(x, df$temp)
+
+lambdas = 10^c(-3, 0, 3)
+
+# ridge regression
+gr <- glmnet(x, df$temp, alpha=0, lambda=lambdas)
+
+
+# lasso regression
+gl <- glmnet(x, df$temp, alpha=1, lambda=lambdas)
+
+coef(gr)
+coef(gl)
 ```
+
+
+### Local Regression
+
+```{r}
+m <- loess(temp ~ x + y, span=.2, data=train)
+z <- interpolate(r, m)
+zm <- mask(z, mask)
+plot(zm)
+contour(zm, add=TRUE)
+
+RMSE(predict(m, test), test$temp)
+```
+
+**Question 7:** What does the the `span` argument represent?
+
+Span corresponds to the parameter $\alpha$, which controls the degree of smoothing. In other words, $\alpha$ controls the size of the neighborhood used for GWR as a proportion of the training data. Thus, $\alpha \geq 1$ corresponds to a global regression. In this example, since `span=.2`, we use $20\%$ of the data.
+
+### Thin Plate Splines
+
+```{r}
+library(fields)
+tps <- Tps(train[, c('x', 'y')], train$temp)
+tps
+```
+
+```{r}
+# make predictions for the raster cells
+ptps <- interpolate(r, tps)
+ptps <- mask(ptps, mask)
+plot(ptps)
+contour(ptps, add=TRUE)
+```
+
+
+```{r}
+# predict for the test points and get RMSE
+pt <- predict(tps, test[, c('x', 'y')])
+RMSE(pt, test$temp)
+```
+
+Now to add elevation as a co-variable:
+
+```{r}
+# input elevation data
+elv1 <- raster::getData('worldclim', res=0.5, var='alt', lon=-122, lat= 37)
+elv2 <- raster::getData('worldclim', res=0.5, var='alt', lon=-120, lat= 37)
+elv <- merge(elv1, elv2, overlap=FALSE)
+# change projection
+telv <- projectRaster(elv, r)
+# mask the data to CA
+celv <- mask(telv, mask)
+names(celv) <- 'elevation'
+# plot it
+plot(celv)
+```
+
+```{r}
+# add elecation variable to train and test data sets
+train$elevation <- extract(celv, train[, 1:2])
+test$elevation <- extract(celv, test[, 1:2])
+# remove points with no elevation data
+train <- train[!is.na(train$elevation), ]
+test <- test[!is.na(test$elevation), ]
+```
+
+```{r}
+# fit a thin plate spline with elevation now
+tps2 <- Tps(train[, c('x', 'y', 'elevation')], train$temp)
+# predict for grid cells
+ptps2 <- interpolate(celv, tps2, xyOnly=FALSE)
+# plot predictions with contours
+plot(ptps2)
+contour(ptps2, add=TRUE)
+```
+
+```{r}
+# check error
+pt2 <- predict(tps2, test[, c('x', 'y', 'elevation')])
+RMSE(test$temp, pt2)
+```
+
+
+**Question 8:** What is a main reason that this the best prediction so far?
+
+The main reason this is the best prediction so far is that we added another co-variable, and elevation is typically very relevant for prediction of temperature (i.e. temperature and elevation are often correlated).
+
+### General Additive Models
+
+```{r}
+library(mgcv)
+ga <- gam(temp ~ s(x) + s(y) + s(elevation), data=train)
+x <- interpolate(celv, ga, xyOnly=FALSE)
+plot(x)
+contour(x, add=TRUE)
+```
+
+```{r}
+# get error for GAM
+pg <- predict(ga, test)
+RMSE(test$temp, pg)
+```
+
+```{r}
+# plot responses to variables
+plot.gam(ga, pages=1)
+```
+
+**Question 9:** Use the help files to exaplin the model below. What do you think of it? Is it better or worse than the gam we did above?
+
+```{r}
+ga2 <- gam(temp ~ te(x, y, k=12, bs='ts') + s(elevation, bs='ts'), data=train)
+```
+
+This is a GAM with smoothing. It again models temperature as a function of `x`, `y`, and `elevation` with a smoothing penalty. The `bs='ts'` parameter indicates a thin plate spline with a modified smoothing penalty, such that the null space (values mapped to zero) are also penalized. The `k=12` term indicates a $12$ dimensional basis for the smoothing of coordinate response. Using `te` for both `x` and `y` instead of using `s` for each individually means that their responses are smoothed together rather than individually.
+
+```{r}
+pg2 <- predict(ga2, test)
+RMSE(test$temp, pg2)
+```
+
+Seeing the computed RMSE above, we can conclude that this model performs better than the original GAM.
