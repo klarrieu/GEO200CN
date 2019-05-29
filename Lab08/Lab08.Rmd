@@ -474,26 +474,79 @@ pr_rf <- predict(landsat5, rf, type='class')
 **Question 5:** Plot the results of rpart and Random Forest classifier side-by-side.
 
 ```{r}
+pr_rf <- ratify(pr_rf)
+rat <- levels(pr_rf)[[1]]
+rat$legend <- classdf$classnames
+levels(pr_rf) <- rat
+
 p1 = levelplot(pr_rf, maxpixels = 1e6,
           col.regions = classcolor,
           scales=list(draw=FALSE),
-          main = "Random Forest classification of Landsat 5")
+          main = "Random Forest")
 p2 = levelplot(pr2011, maxpixels = 1e6,
           col.regions = classcolor,
           scales=list(draw=FALSE),
-          main = "Decision Tree classification of Landsat 5")
+          main = "Decision Tree")
 grid.arrange(p1, p2, ncol=2)
-```
-
-**Question 6 (optional):** Repeat the steps for the year 2001 using Random Forest. Use cloud-free composite image from Landsat 7 with 6-bands. Use as reference data the National Land Cover Database 2001 (NLCD 2001) for the subset of the California Central Valley.*
-
-```{r}
-
 ```
 
 **Question 7 (optional):** We have trained the classifiers using 200 samples for each class. Investigate the effect of sample size on classification. Repeat the steps with different subsets, e.g. a sample size of 150, 100, 50 per class, and compare the results. Use the same holdout samples for model evaluation.
 
 ```{r}
+# make subsets of sample data
+ns = c(150, 100, 50)
+classvals = c(1,2,3,4,5,7,8,9)
+# get subset of n sample data values with classval
+get_subset = function(classval, n){
+  s = subset(sampdata, classvalue==classval)[1:n,]
+  return(s)
+}
+# get n sample data values of each class
+get_all_subs = function(n){
+  s = lapply(classvals, FUN=get_subset, n=n)
+  s = do.call("rbind", s)
+  return(s)
+}
+# get test data (use remaining data held out from biggest subset)
+get_test = function(classval){
+  s = subset(sampdata, classvalue==classval)
+  s = s[150:length(s),]
+  return(s)
+}
+test = do.call("rbind", lapply(classvals, FUN=get_test))
 
+subsets = lapply(ns, FUN=get_all_subs)
+
+accuracies = c()
+# make model for each subset and assess accuracy
+for (subset in subsets){
+  j <- kfold(subset, k = 5, by=subset$classvalue)
+  x <- list()
+  for (k in 1:5) {
+      train <- subset[j!= k, ]
+      cart <- rpart(as.factor(classvalue)~., data=train, method = 'class', minsplit = 5)
+      pclass <- predict(cart, test, type='class')
+      # create a data.frame using the reference and prediction
+      x[[k]] <- cbind(test$classvalue, as.integer(pclass))
+  }
+  y <- do.call(rbind, x)
+  y <- data.frame(y)
+  colnames(y) <- c('observed', 'predicted')
+  conmat <- table(y)
+  # change the name of the classes
+  colnames(conmat) <- classdf$classnames
+  rownames(conmat) <- classdf$classnames
+  # number of cases
+  n <- sum(conmat)
+  # number of correctly classified cases per class
+  diag <- diag(conmat)
+  # Overall Accuracy
+  OA <- sum(diag) / n
+  # save to output array
+  accuracies = append(accuracies, OA)
+}
+
+data.frame(n=ns, accuracy=accuracies)
 ```
 
+From the computed overall accuracies above, we see that sample size does not have much of an effect for n > 50.
